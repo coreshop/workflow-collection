@@ -35,12 +35,10 @@ jobs:
         working-directory: "./docs-generator"
         run: |
           cp -r ../docs ./docs
-
-      - name: Copy Readme
-        working-directory: "./docs-generator"
-        if: ${{ github.repository != 'coreshop/core-shop' }}
-        run: |
-          cp -r ../README.md ./docs/
+          
+          if [ ! -e "./docs/00_Introduction.md" ]; then
+            cp -r ../README.md ./docs/
+          fi
 
       - name: Build Docs
         working-directory: "./docs-generator"
