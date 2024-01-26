@@ -35,7 +35,7 @@ jobs:
         working-directory: "./docs-generator"
         run: |
           cp -r ../docs ./docs
-          
+          ls -la ./docs
           if [ ! -e "./docs/00_Introduction.md" ]; then
             cp -r ../README.md ./docs/
           fi
