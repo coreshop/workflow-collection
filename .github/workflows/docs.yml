@@ -34,10 +34,12 @@ jobs:
       - name: Prepare Docs
         working-directory: "./docs-generator"
         run: |
-          # copy docs to working directory
           cp -r ../docs ./docs
-          
-          # copy readme to working directory
+
+      - name: Copy Readme
+        working-directory: "./docs-generator"
+        if: ${{ github.repository != 'coreshop/core-shop' }}
+        run: |
           cp -r ../README.md ./docs/
 
       - name: Build Docs
