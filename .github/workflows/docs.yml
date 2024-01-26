@@ -25,21 +25,20 @@ jobs:
           path: "./docs-generator"
           token: ${{ secrets.DOCS_GENERATOR_ACCESS_TOKEN }}
 
+      - name: Prepare Docs
+        working-directory: "./docs-generator"
+        run: |
+          rm -rf ./docs
+          mv ../docs docs
+          if [ ! -e "./docs/00_Introduction.md" ]; then
+            cp -r ../README.md ./docs/
+          fi
+
       - name: "Install Node"
         uses: actions/setup-node@v3
         with:
           node-version: 19.x
           registry-url: 'https://registry.npmjs.org'
-
-      - name: Prepare Docs
-        working-directory: "./docs-generator"
-        run: |
-          cp -r ../docs ./docs
-          ls -la ./docs
-          if [ ! -e "./docs/00_Introduction.md" ]; then
-            cp -r ../README.md ./docs/
-          fi
-
       - name: Build Docs
         working-directory: "./docs-generator"
         run: |
