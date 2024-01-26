@@ -34,7 +34,6 @@ jobs:
       - name: Prepare Docs
         working-directory: "./docs-generator"
         run: |
-          mkdir docs
           # copy docs to working directory
           cp -r ../docs ./docs
           
