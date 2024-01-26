@@ -1,0 +1,48 @@
+name: "Documentation"
+
+on:
+  workflow_call:
+    secrets:
+      DOCS_GENERATOR_ACCESS_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: "Generate docs CoreShop Docs Generator"
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: "Checkout code"
+        uses: "actions/checkout@v4"
+
+      - name: "Checkout Docs Generator"
+        uses: "actions/checkout@v4"
+        with:
+          repository: "coreshop/docs-generator"
+          ref: "main"
+          path: "./docs-generator"
+          token: ${{ secrets.DOCS_GENERATOR_ACCESS_TOKEN }}
+
+      - name: "Install Node"
+        uses: actions/setup-node@v3
+        with:
+          node-version: 19.x
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Prepare Docs
+        working-directory: "./docs-generator"
+        run: |
+          mkdir docs
+          # copy docs to working directory
+          cp -r ../docs ./docs
+          
+          # copy readme to working directory
+          cp -r ../README.md ./docs/
+
+      - name: Build Docs
+        working-directory: "./docs-generator"
+        run: |
+          npm install
+          npm run build
