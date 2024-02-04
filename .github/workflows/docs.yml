@@ -2,9 +2,6 @@ name: "Documentation"
 
 on:
   workflow_call:
-    secrets:
-      DOCS_GENERATOR_ACCESS_TOKEN:
-        required: true
 
 permissions:
   contents: read
@@ -23,7 +20,6 @@ jobs:
           repository: "coreshop/docs-generator"
           ref: "main"
           path: "./docs-generator"
-          token: ${{ secrets.DOCS_GENERATOR_ACCESS_TOKEN }}
 
       - name: Prepare Docs
         working-directory: "./docs-generator"
