@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   docs:
-    name: "Generate docs CoreShop Docs Generator"
+    name: "CoreShop Docs Generator"
     runs-on: "ubuntu-latest"
     steps:
       - name: "Checkout code"
