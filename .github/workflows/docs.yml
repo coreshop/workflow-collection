@@ -32,8 +32,6 @@ jobs:
           
           rm docusaurus.config.js
           mv docusaurus.config.tests.js docusaurus.config.js
-          
-          cat docusaurus.config.js
 
       - name: "Install Node"
         uses: actions/setup-node@v3
