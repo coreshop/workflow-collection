@@ -111,7 +111,7 @@ jobs:
         bin/console coreshop:install --no-interaction
 
     - name: Install Seperate Bundle
-      if: ${{ intputs.run-bundle-installer != '' }}
+      if: ${{ inputs.run-bundle-installer != '' }}
       run: |
         bin/console pimcore:bundle:install ${{ inputs.run-bundle-installer }} --no-interaction
 
