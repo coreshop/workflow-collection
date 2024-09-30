@@ -1,6 +1,19 @@
 name: Behat
 on:
   workflow_call:
+    inputs:
+      install-data-hub:
+        required: false
+        type: boolean
+        default: true
+      run-symfony-server:
+        required: false
+        type: boolean
+        default: true
+      behat-profile:
+        required: false
+        type: string
+        default: "default"
 
 permissions:
   contents: read
@@ -22,9 +35,6 @@ jobs:
       PANTHER_EXTERNAL_BASE_URI: "http://localhost:9080/index_test.php"
       PANTHER_CHROME_ARGUMENTS: "--disable-dev-shm-usage"
       PIMCORE_KERNEL_CLASS: 'Kernel'
-      INSTALL_PIMCORE_DATAHUB: "yes"
-      RUN_SYMFONY_SERVER: "yes"
-      BEHAT_PROFILE: "default"
 
     strategy:
       matrix:
@@ -98,18 +108,18 @@ jobs:
         bin/console coreshop:install --no-interaction
 
     - name: Install DataHub
-      if: ${{ env.INSTALL_PIMCORE_DATAHUB == 'yes' }}
+      if: ${{ input.install-data-hub }}
       run: |
         bin/console pimcore:bundle:install PimcoreDataHubBundle
         bin/console datahub:graphql:rebuild-definitions
         composer dump-autoload
 
     - name: Run Symfony Webserver
-      if: ${{ env.RUN_SYMFONY_SERVER == 'yes' }}
+      if: ${{ input.run-symfony-server }}
       run: symfony server:start --port=9080 --dir=public --daemon --no-tls
 
     - name: Run Behat
-      run: vendor/bin/behat --strict --no-interaction -vvv -f progress --config behat.yml.dist -p ${{ env.BEHAT_PROFILE }}
+      run: vendor/bin/behat --strict --no-interaction -vvv -f progress --config behat.yml.dist -p ${{ input.behat-profile }}
 
     - name: Upload Pimcore logs
       uses: actions/upload-artifact@v4
