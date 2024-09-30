@@ -14,6 +14,9 @@ on:
         required: false
         type: string
         default: "default"
+      run-bundle-installer:
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -106,6 +109,11 @@ jobs:
     - name: Install CoreShop
       run: |
         bin/console coreshop:install --no-interaction
+
+    - name: Install Seperate Bundle
+      if: ${{ intputs.run-bundle-installer != '' }}
+      run: |
+        bin/console pimcore:bundle:install ${{ inputs.run-bundle-installer }} --no-interaction
 
     - name: Install DataHub
       if: ${{ inputs.install-data-hub }}
