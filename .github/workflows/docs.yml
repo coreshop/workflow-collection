@@ -2,6 +2,10 @@ name: "Documentation"
 
 on:
   workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        default: '["ubuntu-latest"]'
 
 permissions:
   contents: read
@@ -9,7 +13,7 @@ permissions:
 jobs:
   docs:
     name: "CoreShop Docs Generator"
-    runs-on: "ubuntu-latest"
+    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
     steps:
       - name: "Checkout code"
         uses: "actions/checkout@v4"

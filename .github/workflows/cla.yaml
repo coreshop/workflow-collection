@@ -2,13 +2,17 @@ name: "CLA Check Workflow"
 
 on:
   workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        default: '["ubuntu-latest"]'
     secrets:
       CLA_ACTION_ACCESS_TOKEN:
         required: true
 
 jobs:
   CLAAssistant:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
     steps:
       - name: "CLA Assistant"
         uses: contributor-assistant/github-action@v2.5.1

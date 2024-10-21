@@ -2,10 +2,14 @@ name: Static Tests
 
 on:
   workflow_call:
+    inputs:
+      runs_on:
+        type: string
+        default: '["ubuntu-latest"]'
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
     env:
       DATABASE_HOST: ""
       DATABASE_PORT: ""
