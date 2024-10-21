@@ -26,7 +26,7 @@ permissions:
 
 jobs:
   behat:
-    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
+    runs-on: ${{fromJSON(inputs.runs_on)}}
     env:
       APP_ENV: "test"
       CORESHOP_SKIP_DB_SETUP: "1"

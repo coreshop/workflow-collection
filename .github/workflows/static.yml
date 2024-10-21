@@ -9,7 +9,7 @@ on:
 
 jobs:
   lint:
-    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
+    runs-on: ${{fromJSON(inputs.runs_on)}}
     env:
       DATABASE_HOST: ""
       DATABASE_PORT: ""

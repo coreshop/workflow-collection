@@ -12,7 +12,7 @@ on:
 
 jobs:
   CLAAssistant:
-    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
+    runs-on: ${{fromJSON(inputs.runs_on)}}
     steps:
       - name: "CLA Assistant"
         uses: contributor-assistant/github-action@v2.5.1

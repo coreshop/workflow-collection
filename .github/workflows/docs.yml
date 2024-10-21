@@ -13,7 +13,7 @@ permissions:
 jobs:
   docs:
     name: "CoreShop Docs Generator"
-    runs-on: ${{ fromJSON(github.event.inputs.runs_on) }}
+    runs-on: ${{fromJSON(inputs.runs_on)}}
     steps:
       - name: "Checkout code"
         uses: "actions/checkout@v4"
