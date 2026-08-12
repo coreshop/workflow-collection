@@ -20,6 +20,16 @@ on:
       run-bundle-installer:
         required: false
         type: string
+      php_versions:
+        description: "JSON array of PHP versions for the test matrix. The default matches CoreShop 5 (PHP ^8.3)."
+        required: false
+        type: string
+        default: '["8.3", "8.4"]'
+      pimcore_versions:
+        description: "JSON array of Pimcore version constraints for the test matrix."
+        required: false
+        type: string
+        default: '["^12.0"]'
 
 permissions:
   contents: read
@@ -44,8 +54,8 @@ jobs:
 
     strategy:
       matrix:
-        php: [ 8.1, 8.2, 8.3 ]
-        pimcore: [ ^11.1, ^11.2, ^11.3 ]
+        php: ${{ fromJSON(inputs.php_versions) }}
+        pimcore: ${{ fromJSON(inputs.pimcore_versions) }}
         dependencies: [ highest ]
         exclude:
           - php: 8.1
