@@ -1,0 +1,80 @@
+# Sync configuration for BetaHuhn/repo-file-sync-action
+# (executed by .github/workflows/sync-files.yml on every push to main).
+#
+# Group 1 gives every private bundle repo the enforce guardrail caller, the
+# issues-to-project caller, the PR template and the minimal static test
+# setup. Groups 2+ add the templated Behat domain workflow for repos that
+# have Behat suites (the bundle installer name is injected per repo, which
+# is why each of them needs its own group). The last group covers the public
+# OSS core with the advisory-mode caller.
+#
+# Adding a new repo: add it to the matching repos list and merge to main —
+# the sync then opens a PR in the target repo.
+# See docs/GUARDRAILS.md, section "Adding a new repo to the sync".
+#
+# IMPORTANT: no comments are possible inside the `repos: |` blocks — every
+# line is interpreted as a repo name.
+
+group:
+  # ──────────────────────────────────────────────────────────────────────
+  # Group 1: all private bundle repos — guardrail (enforce), project
+  # auto-add, PR template, static tests
+  # ──────────────────────────────────────────────────────────────────────
+  - repos: |
+      coreshop/b2b-company-bundle
+      coreshop/batch-messenger-bundle
+      coreshop/credit-bundle
+      coreshop/customer-cluster-bundle
+      coreshop/deposit-bundle
+      coreshop/document-route-bundle
+      coreshop/headless-bundle
+      coreshop/inbound-email-rules-bundle
+      coreshop/index-geo-bundle
+      coreshop/loyalty-bundle
+      coreshop/quick-order-bundle
+      coreshop/ticketing-bundle
+      coreshop/voucher-credit-bundle
+      coreshop/warehouse-bundle
+    files:
+      - source: templates/pr-guardrail.yml
+        dest: .github/workflows/pr-guardrail.yml
+      - source: templates/issues-to-project.yml
+        dest: .github/workflows/issues-to-project.yml
+      - source: templates/pull_request_template.md
+        dest: .github/pull_request_template.md
+      - source: templates/static.yml
+        dest: .github/workflows/static.yaml
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Groups 2+: Behat domain suite for repos that have Behat tests. One
+  # group per repo because the bundle installer name is a template value.
+  # ──────────────────────────────────────────────────────────────────────
+  - repos: |
+      coreshop/b2b-company-bundle
+    files:
+      - source: templates/behat-domain.yml
+        dest: .github/workflows/behat_domain.yml
+        template:
+          bundle: CoreShopB2BCompanyBundle
+
+  - repos: |
+      coreshop/ticketing-bundle
+    files:
+      - source: templates/behat-domain.yml
+        dest: .github/workflows/behat_domain.yml
+        template:
+          bundle: CoreShopTicketingBundle
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Public OSS repos with external contributors: advisory-mode caller and
+  # the English Q/A PR template. No test sync — the core has its own CI.
+  # ──────────────────────────────────────────────────────────────────────
+  - repos: |
+      coreshop/CoreShop
+    files:
+      - source: templates/pr-guardrail-oss.yml
+        dest: .github/workflows/pr-guardrail.yml
+      - source: templates/issues-to-project.yml
+        dest: .github/workflows/issues-to-project.yml
+      - source: templates/pull_request_template-oss.md
+        dest: .github/pull_request_template.md
