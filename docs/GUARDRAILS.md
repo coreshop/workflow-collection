@@ -1,10 +1,13 @@
-# PR Guardrails for CoreShop — Requirements
+# PR Guardrails for CoreShop
 
-> Status: **Specification** — describes the target state; implementation
-> follows in separate PRs. Modeled after the guardrail system in
+> Modeled after the guardrail system in
 > [`cors-gmbh/shared-workflows`](https://github.com/cors-gmbh/shared-workflows),
 > adapted to CoreShop specifics (version branches, public OSS core, the
 > existing test workflows in this repo).
+>
+> - Reusable workflows: [`pr-guardrail.yml`](../.github/workflows/pr-guardrail.yml), [`add-to-project.yml`](../.github/workflows/add-to-project.yml)
+> - Rule logic + tests: [`scripts/guardrails/`](../scripts/guardrails/) (CI: [`guardrails-ci.yml`](../.github/workflows/guardrails-ci.yml))
+> - Distribution: [`sync-files.yml`](../.github/workflows/sync-files.yml) with configuration in [`.github/sync.yml`](../.github/sync.yml)
 
 A central quality gate for pull requests across all CoreShop repositories.
 The guardrail runs as a reusable workflow from this repo and is distributed
@@ -24,8 +27,8 @@ caller workflow, the logic stays central.
 | **R7** | The PR targets a **version branch** (`^\d+\.x$`, e.g. `2.x`). | Violation |
 
 **Merge-up exception:** PRs whose head branch is itself a version branch
-(e.g. `1.x` → `2.x`) are exempt from R1, R2 and R6 — by nature they have no
-issue.
+(e.g. `1.x` → `2.x`) are exempt from R1, R2, R4 and R6 — by nature they have
+no issue and usually no prose body. R5 (green CI) and R7 still apply.
 
 ## Two modes
 
@@ -68,17 +71,21 @@ Distribution is handled by a `sync-files.yml` in this repo
 (BetaHuhn/repo-file-sync-action) with group configuration in
 `.github/sync.yml`. Two kinds of files are synced:
 
-1. **Guardrail caller + PR template** (enforce or OSS variant per group).
+1. **Guardrail caller, issues-to-project caller + PR template** (enforce or
+   OSS variant per group).
 2. **Test workflows** — the minimal setup per bundle repo:
-   - `behat_domain.yml` — Behat domain suite with bundle installer
-   - `static.yaml` — static analysis
-   The bundle class name (`run-bundle-installer`, e.g.
-   `CoreShopB2BCompanyBundle`) is injected per repo via the sync action's
-   **templating** feature.
+   - `static.yaml` — static analysis (all bundle repos)
+   - `behat_domain.yml` — Behat domain suite, only for repos that have
+     Behat tests (currently b2b-company and ticketing). The bundle class
+     name (`run-bundle-installer`, e.g. `CoreShopB2BCompanyBundle`) is
+     injected via the sync action's **templating** feature, which is why
+     each Behat repo has its own sync group.
 
 **Extensible:** repos can add their own workflows next to the synced ones
 (e.g. `behat_ui.yml` with the UI profile) — the sync only overwrites the
-files it manages.
+files it manages. Note: repo-owned extra workflows (b2b-company
+`behat_ui.yml`, headless `behat.yml`) still trigger on `main` and must be
+switched to `*.x` manually — see rollout.
 
 **Important — trigger branches:** the synced workflows trigger on version
 branches (`'*.x'`), **not** on `main`. The legacy callers in the bundle
@@ -119,5 +126,8 @@ rename (main → `1.x`/`2.x` on 2026-08-12) — the first sync replaces them.
 3. Merge the open Pimcore 12 migration PRs (`update/pimcore-12`, all 14
    bundles) **before** the enforce rollout — they violate R1/R2.
 4. Run the sync, merge the sync PRs in the target repos.
-5. Create the `guardrail-bypass` label in the target repos (optional, so it
+5. Fix the triggers of repo-owned extra workflows that are not covered by
+   the sync (b2b-company `behat_ui.yml`, headless `behat.yml`): `main` →
+   `'*.x'`.
+6. Create the `guardrail-bypass` label in the target repos (optional, so it
    shows up in the label picker).

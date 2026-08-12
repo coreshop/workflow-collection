@@ -1,0 +1,64 @@
+name: "📋 Add to Project"
+
+# Separately activatable reusable workflow: adds new issues and PRs to a
+# fixed Projects V2 board — the org-wide "CoreShop Development" board by
+# default. Idempotent: content already on the board is left untouched.
+
+on:
+  workflow_call:
+    inputs:
+      project-owner:
+        description: "Organization that owns the target Projects V2 board."
+        type: string
+        required: false
+        default: 'coreshop'
+      project-number:
+        description: "Number of the target Projects V2 board."
+        type: number
+        required: false
+        default: 1
+    secrets:
+      GH_APP_ID:
+        description: "App ID of the CoreShop CD bot (org secret, pass via `secrets: inherit`)."
+        required: true
+      GH_APP_PRIVATE_KEY:
+        description: "Private key of the CoreShop CD bot (org secret, pass via `secrets: inherit`)."
+        required: true
+
+# Everything runs through the app token (org "Projects" permission required).
+permissions: {}
+
+jobs:
+  add-to-project:
+    # Only events that carry an issue or PR payload are useful — the caller
+    # may share its triggers with the guardrail (check_suite, status, ...).
+    if: github.event_name == 'issues' || github.event_name == 'pull_request_target' || github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: "🔑 Create app token"
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: >-
+            ${{ github.event.repository.name }},workflow-collection
+
+      - name: "📥 Checkout scripts"
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: ${{ github.repository_owner }}/workflow-collection
+          ref: ${{ github.job_workflow_sha }}
+          token: ${{ steps.app-token.outputs.token }}
+          sparse-checkout: scripts/guardrails
+          persist-credentials: false
+
+      - name: "📋 Add to project board"
+        env:
+          GUARDRAIL_TOKEN: ${{ steps.app-token.outputs.token }}
+          PROJECT_OWNER: ${{ inputs.project-owner }}
+          PROJECT_NUMBER: ${{ inputs.project-number }}
+        run: node scripts/guardrails/run-add-to-project.mjs
