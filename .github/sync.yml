@@ -17,8 +17,10 @@
 
 group:
   # ──────────────────────────────────────────────────────────────────────
-  # Group 1: all private bundle repos — guardrail (enforce), project
-  # auto-add, PR template, static tests
+  # Group 1: private bundle repos — guardrail (enforce), project auto-add,
+  # PR template, static tests, shared psalm config.
+  # headless-bundle is NOT here: it extends psalm.xml with its own
+  # issueHandlers, so it gets everything except psalm.xml in group 1b.
   # ──────────────────────────────────────────────────────────────────────
   - repos: |
       coreshop/b2b-company-bundle
@@ -27,7 +29,6 @@ group:
       coreshop/customer-cluster-bundle
       coreshop/deposit-bundle
       coreshop/document-route-bundle
-      coreshop/headless-bundle
       coreshop/inbound-email-rules-bundle
       coreshop/index-geo-bundle
       coreshop/loyalty-bundle
@@ -35,6 +36,24 @@ group:
       coreshop/ticketing-bundle
       coreshop/voucher-credit-bundle
       coreshop/warehouse-bundle
+    files:
+      - source: templates/pr-guardrail.yml
+        dest: .github/workflows/pr-guardrail.yml
+      - source: templates/issues-to-project.yml
+        dest: .github/workflows/issues-to-project.yml
+      - source: templates/pull_request_template.md
+        dest: .github/pull_request_template.md
+      - source: templates/static.yml
+        dest: .github/workflows/static.yaml
+      - source: templates/psalm.xml
+        dest: psalm.xml
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Group 1b: headless-bundle — same as group 1 but without psalm.xml
+  # (it maintains its own extended psalm config).
+  # ──────────────────────────────────────────────────────────────────────
+  - repos: |
+      coreshop/headless-bundle
     files:
       - source: templates/pr-guardrail.yml
         dest: .github/workflows/pr-guardrail.yml
