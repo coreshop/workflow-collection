@@ -20,6 +20,16 @@ on:
       run-bundle-installer:
         required: false
         type: string
+      php_versions:
+        description: "JSON array of PHP versions for the test matrix. The default matches CoreShop 5 (PHP ^8.3)."
+        required: false
+        type: string
+        default: '["8.3", "8.4"]'
+      pimcore_versions:
+        description: "JSON array of Pimcore version constraints for the test matrix."
+        required: false
+        type: string
+        default: '["^12.0"]'
 
 permissions:
   contents: read
@@ -30,6 +40,14 @@ jobs:
     env:
       APP_ENV: "test"
       CORESHOP_SKIP_DB_SETUP: "1"
+      # Pimcore 12 requires these at container compile time. Values come from
+      # the coreshop org secrets; callers pass them via `secrets: inherit`.
+      PIMCORE_SECRET: "${{ secrets.PIMCORE_SECRET }}"
+      PIMCORE_INSTALL_ENCRYPTION_SECRET: "${{ secrets.PIMCORE_SECRET }}"
+      PIMCORE_INSTANCE_IDENTIFIER: "${{ secrets.PIMCORE_INSTANCE_IDENTIFIER }}"
+      PIMCORE_INSTALL_INSTANCE_IDENTIFIER: "${{ secrets.PIMCORE_INSTANCE_IDENTIFIER }}"
+      PIMCORE_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
+      PIMCORE_INSTALL_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
       PIMCORE_TEST_DB_DSN: "mysql://root:root@127.0.0.1:3306/coreshop_test"
       PIMCORE_INSTALL_ADMIN_USERNAME: "admin"
       PIMCORE_INSTALL_ADMIN_PASSWORD: "admin"
@@ -44,8 +62,8 @@ jobs:
 
     strategy:
       matrix:
-        php: [ 8.1, 8.2, 8.3 ]
-        pimcore: [ ^11.1, ^11.2, ^11.3 ]
+        php: ${{ fromJSON(inputs.php_versions) }}
+        pimcore: ${{ fromJSON(inputs.pimcore_versions) }}
         dependencies: [ highest ]
         exclude:
           - php: 8.1

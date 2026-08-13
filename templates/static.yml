@@ -21,3 +21,4 @@ permissions:
 jobs:
   static:
     uses: coreshop/workflow-collection/.github/workflows/static.yml@v1
+    secrets: inherit
