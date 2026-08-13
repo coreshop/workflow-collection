@@ -29,6 +29,7 @@ permissions:
 jobs:
   behat:
     uses: coreshop/workflow-collection/.github/workflows/behat.yml@v1
+    secrets: inherit
     with:
       install-data-hub: false
       run-symfony-server: false

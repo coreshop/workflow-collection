@@ -21,6 +21,12 @@ jobs:
       DATABASE_PASSWORD: ""
       DATABASE_NAME: ""
       DATABASE_VERSION: "8.0.26"
+      # Pimcore 12 requires these at container compile time (lint:container).
+      # Values come from the coreshop org secrets; callers pass them via
+      # `secrets: inherit`.
+      PIMCORE_SECRET: "${{ secrets.PIMCORE_SECRET }}"
+      PIMCORE_INSTANCE_IDENTIFIER: "${{ secrets.PIMCORE_INSTANCE_IDENTIFIER }}"
+      PIMCORE_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
 
     strategy:
       matrix:

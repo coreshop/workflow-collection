@@ -94,6 +94,11 @@ rename (main → `1.x`/`2.x` on 2026-08-12) — the first sync replaces them.
 
 ## Infrastructure
 
+- **Org secrets for the test workflows:** Pimcore 12 requires
+  `PIMCORE_SECRET`, `PIMCORE_INSTANCE_IDENTIFIER` and `PIMCORE_PRODUCT_KEY`
+  at container compile time. They live as coreshop org secrets; the synced
+  callers pass them with `secrets: inherit` and `static.yml`/`behat.yml`
+  export them as env (same pattern as the coreshop/CoreShop workflows).
 - **GitHub App "CoreShop CD Bot"** (to be created, org coreshop),
   credentials as org secrets `GH_APP_ID` / `GH_APP_PRIVATE_KEY`, made
   visible to all target repos. Permissions:
