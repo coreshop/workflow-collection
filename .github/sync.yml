@@ -3,8 +3,9 @@
 #
 # Group 1 gives every private bundle repo the enforce guardrail caller, the
 # issues-to-project caller, the PR template and the minimal static test
-# setup. Groups 2+ add the templated Behat domain workflow for repos that
-# have Behat suites (the bundle installer name is injected per repo, which
+# setup. Group 1c adds the Studio frontend build for the bundles that ship
+# a Pimcore Studio plugin. Groups 2+ add the templated Behat domain
+# workflow for repos that have Behat suites (the bundle installer name is injected per repo, which
 # is why each of them needs its own group). The last group covers the public
 # OSS core with the advisory-mode caller.
 #
@@ -63,6 +64,28 @@ group:
         dest: .github/pull_request_template.md
       - source: templates/static.yml
         dest: .github/workflows/static.yaml
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Group 1c: bundle repos that ship a Pimcore Studio plugin
+  # (src/Resources/assets/pimcore-studio) — the Studio frontend build.
+  # Not listed: b2b-company, credit, index-geo and quick-order, which have
+  # no Studio frontend. The reusable workflow skips repos without an assets
+  # directory, so a bundle can be added here before its plugin lands.
+  # ──────────────────────────────────────────────────────────────────────
+  - repos: |
+      coreshop/batch-messenger-bundle
+      coreshop/customer-cluster-bundle
+      coreshop/deposit-bundle
+      coreshop/document-route-bundle
+      coreshop/headless-bundle
+      coreshop/inbound-email-rules-bundle
+      coreshop/loyalty-bundle
+      coreshop/ticketing-bundle
+      coreshop/voucher-credit-bundle
+      coreshop/warehouse-bundle
+    files:
+      - source: templates/studio-build.yml
+        dest: .github/workflows/studio-build.yml
 
   # ──────────────────────────────────────────────────────────────────────
   # Groups 2+: Behat domain suite for repos that have Behat tests. One

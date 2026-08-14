@@ -1,0 +1,51 @@
+# ⚠️  CENTRALLY MANAGED FILE — DO NOT EDIT LOCALLY!
+#
+# This file is distributed from coreshop/workflow-collection via file sync
+# (source: templates/studio-build.yml). Local changes will be overwritten by the
+# next sync run via PR.
+
+name: Studio Frontend Build
+
+on:
+  # Pull requests only verify that the Studio plugin type-checks and builds.
+  # Nothing is committed, so the diff of a pull request stays limited to the
+  # actual source changes.
+  pull_request:
+    branches: [ '*.x' ]
+  # The built assets are committed once per push to a development branch, which
+  # is what the release tag and the composer dist package pick up.
+  #
+  # That commit only touches the built assets, so `paths-ignore` keeps it from
+  # triggering another (no-op) build.
+  push:
+    branches: [ '*.x' ]
+    paths-ignore:
+      - 'src/Resources/public/studio/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Pull requests and manual runs verify only. Gating on `push` rather than on
+  # "not a pull request" keeps a manual run on a feature branch from committing
+  # assets to that branch.
+  verify:
+    if: ${{ github.event_name != 'push' }}
+    permissions:
+      contents: read
+    uses: coreshop/workflow-collection/.github/workflows/studio-build.yml@v1
+    secrets: inherit
+    with:
+      commit: false
+
+  build:
+    if: ${{ github.event_name == 'push' }}
+    permissions:
+      contents: write
+    uses: coreshop/workflow-collection/.github/workflows/studio-build.yml@v1
+    # A called workflow gets no secrets by default; needed for the optional
+    # STUDIO_BUILD_APP_* credentials.
+    secrets: inherit
+    with:
+      commit: true
