@@ -179,6 +179,22 @@ container** (GitHub Actions has no `if:` on `services`), so it starts for
 `^12.*` entries too, where it sits idle. `PIMCORE_OPENSEARCH_DSN` is likewise
 a plain job env var, unread on 12.
 
+## `secrets: inherit` is mandatory in every caller
+
+A called workflow gets **no** secrets by default, so a caller without
+`secrets: inherit` reaches `static.yml` / `behat.yml` with `PIMCORE_SECRET`
+and friends empty. Pimcore 12.3 tolerated an empty encryption secret; 2026.1
+aborts the container compile with `` `pimcore.encryption.secret` is not set ``,
+which reads like a bundle config problem and is not one. `static.yml` and
+`behat.yml` therefore fail fast with a step that names the missing
+`secrets: inherit`.
+
+All synced templates carry it. Repo-owned workflows next to the synced ones
+(b2b-company `behat_ui.yml`, headless `behat.yml`, the `cla-check.yaml`
+callers) are **not** covered by the sync and have to be fixed in the repo —
+`cla.yaml` reads `secrets.CLA_ACTION_ACCESS_TOKEN`, so its callers need it
+too.
+
 ## PHP versions
 
 The reusable workflows default to the CoreShop 5 matrix (`static.yml`,

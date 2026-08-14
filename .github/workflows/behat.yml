@@ -99,6 +99,18 @@ jobs:
     name: "${{ matrix.pimcore }}, PHP ${{ matrix.php }}, Deps ${{ matrix.dependencies }}"
 
     steps:
+    # A caller that forgets `secrets: inherit` reaches this workflow with every
+    # secret empty. Pimcore 12.3 tolerated an empty encryption secret, but
+    # 2026.1 aborts the container compile with '`pimcore.encryption.secret` is
+    # not set' — an error that points at the bundle's config instead of at the
+    # caller. Failing here names the actual cause.
+    - name: Check that the org secrets arrived
+      run: |
+        if [ -z "${PIMCORE_SECRET:-}" ]; then
+          echo "::error::PIMCORE_SECRET is empty. The calling workflow is missing 'secrets: inherit' (the coreshop org secrets are not passed to a called workflow by default)."
+          exit 1
+        fi
+
     - uses: actions/checkout@v4
 
     - name: Install PHP
