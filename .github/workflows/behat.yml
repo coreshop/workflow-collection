@@ -124,8 +124,33 @@ jobs:
     - name: Assets Install
       run: bin/console assets:install --symlink
 
+    # Pimcore 2026.1 replaced the installer's flags with a profile-based
+    # interface: --skip-database-config no longer exists (the run aborts with
+    # 'The "--skip-database-config" option does not exist'), and the bundles to
+    # install plus the env-var definitions now come from an install profile.
+    # This workflow still serves callers on ^12.*, so the invocation is picked
+    # from the matrix entry's major version rather than replaced. Comparing the
+    # leading number keeps that independent of the constraint syntax the caller
+    # uses (^2026.1, ~2026.1, 2026.1.*). PIMCORE_KERNEL_CLASS comes from the
+    # job env, which is why neither branch sets it inline.
     - name: Install Pimcore
-      run: PIMCORE_KERNEL_CLASS=Kernel vendor/bin/pimcore-install --env=test --skip-database-config --no-interaction
+      env:
+        PIMCORE_VERSION: ${{ matrix.pimcore }}
+      run: |
+        MAJOR="$(printf '%s' "$PIMCORE_VERSION" | tr -cd '0-9.' | cut -d. -f1)"
+
+        if [ "${MAJOR:-0}" -ge 2026 ]; then
+          # CoreShopInstallProfile installs a bare Pimcore with the database
+          # wired up and the Studio stack registered; everything
+          # CoreShop-specific follows in the `coreshop:install` step below.
+          # Validation is skipped because the database is already created by
+          # the Setup DB step.
+          vendor/bin/pimcore-install --env=test --no-interaction \
+            --install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile' \
+            --skip-validation
+        else
+          vendor/bin/pimcore-install --env=test --skip-database-config --no-interaction
+        fi
 
     - name: Install CoreShop
       run: |

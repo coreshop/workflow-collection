@@ -140,6 +140,24 @@ Bundle specifics that differ from the core monorepo:
 - Repos without `src/Resources/assets/pimcore-studio` skip the build via the
   `detect` job, so a bundle can be added to the sync group before its plugin
   lands.
+- The `assets_path` / `output_path` defaults assume the common `src/Resources`
+  layout. A bundle whose sources sit elsewhere (ticketing has `src/Bundle/…`)
+  must pass both inputs in its caller. That is one of the few legitimate
+  reasons to deviate from the synced template — and since a sync run
+  overwrites the file, such a repo needs the deviation re-applied, or the
+  template needs a per-repo sync group.
+
+## Pimcore install step (`behat.yml`)
+
+Pimcore 2026.1 replaced the installer's flags with a profile-based interface,
+so `--skip-database-config` no longer exists and the bundles to install come
+from an install profile. `behat.yml` therefore picks the invocation from the
+matrix entry's major version — `>= 2026` gets
+`--install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile'
+--skip-validation`, everything below keeps the Pimcore 12 invocation — so the
+workflow keeps serving callers on both lines. Comparing the leading number
+makes that independent of the constraint syntax (`^2026.1`, `~2026.1`,
+`2026.1.*`).
 
 ## PHP versions
 
