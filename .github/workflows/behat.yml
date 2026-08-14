@@ -59,6 +59,10 @@ jobs:
       PANTHER_EXTERNAL_BASE_URI: "http://localhost:9080/index_test.php"
       PANTHER_CHROME_ARGUMENTS: "--disable-dev-shm-usage"
       PIMCORE_KERNEL_CLASS: 'Kernel'
+      # Only consumed on Pimcore 2026, which installs the Generic Data Index and
+      # therefore needs a reachable OpenSearch. Inert on ^12.*, where nothing
+      # reads it.
+      PIMCORE_OPENSEARCH_DSN: "opensearch://127.0.0.1:9200?ssl=false&ssl_verify=false"
 
     strategy:
       matrix:
@@ -78,6 +82,20 @@ jobs:
           - 3306:3306
         options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
 
+      # Needed by Pimcore 2026's Generic Data Index. Service containers cannot
+      # be declared conditionally, so it also starts for ^12.* matrix entries,
+      # where it just sits idle — nothing points at it. Configuration matching
+      # coreshop/CoreShop's 2026.x behat workflow.
+      opensearch:
+        image: "opensearchproject/opensearch:2.11.1"
+        env:
+          discovery.type: single-node
+          plugins.security.disabled: "true"
+          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+          action.auto_create_index: "false"
+        ports:
+          - 9200:9200
+
     name: "${{ matrix.pimcore }}, PHP ${{ matrix.php }}, Deps ${{ matrix.dependencies }}"
 
     steps:
@@ -93,6 +111,19 @@ jobs:
 
     - name: Check PHP Version
       run: php -v
+
+    # Pimcore 2026.1 needs a different install procedure than ^12.* (see the
+    # install step below), and this workflow serves callers on both lines. The
+    # major version is derived once here so the steps that differ can gate on
+    # it. Comparing the leading number keeps that independent of the constraint
+    # syntax the caller passes (^2026.1, ~2026.1, 2026.1.*).
+    - name: Determine the Pimcore major version
+      id: pimcore-version
+      env:
+        PIMCORE_VERSION: ${{ matrix.pimcore }}
+      run: |
+        MAJOR="$(printf '%s' "$PIMCORE_VERSION" | tr -cd '0-9.' | cut -d. -f1)"
+        echo "major=${MAJOR:-0}" >> "$GITHUB_OUTPUT"
 
     - name: Setup DB
       run: |
@@ -124,33 +155,56 @@ jobs:
     - name: Assets Install
       run: bin/console assets:install --symlink
 
+    # A 2026 install brings up the Generic Data Index, which talks to OpenSearch
+    # during the install itself, so the client has to be configured before
+    # pimcore-install runs. Same file as coreshop/CoreShop's 2026.x behat
+    # workflow.
+    - name: Configure the OpenSearch client
+      if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
+      run: |
+        mkdir -p config/local
+        cat > config/local/opensearch.yaml << 'EOF'
+        pimcore_open_search_client:
+          clients:
+            default:
+              hosts: ['http://127.0.0.1:9200']
+              ssl_verification: false
+        EOF
+
     # Pimcore 2026.1 replaced the installer's flags with a profile-based
     # interface: --skip-database-config no longer exists (the run aborts with
     # 'The "--skip-database-config" option does not exist'), and the bundles to
     # install plus the env-var definitions now come from an install profile.
-    # This workflow still serves callers on ^12.*, so the invocation is picked
-    # from the matrix entry's major version rather than replaced. Comparing the
-    # leading number keeps that independent of the constraint syntax the caller
-    # uses (^2026.1, ~2026.1, 2026.1.*). PIMCORE_KERNEL_CLASS comes from the
-    # job env, which is why neither branch sets it inline.
-    - name: Install Pimcore
-      env:
-        PIMCORE_VERSION: ${{ matrix.pimcore }}
+    # CoreShopInstallProfile installs a bare Pimcore with the database wired up
+    # and the Studio stack registered; everything CoreShop-specific follows in
+    # the `coreshop:install` step below. Validation is skipped because the
+    # database already exists — the Setup DB step created it.
+    #
+    # Invocation copied from coreshop/CoreShop's 2026.x behat workflow, which
+    # notably does not pass --env: APP_ENV=test from the job env already selects
+    # the environment. PIMCORE_KERNEL_CLASS comes from the job env too.
+    - name: Install Pimcore (2026 install profile)
+      if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
       run: |
-        MAJOR="$(printf '%s' "$PIMCORE_VERSION" | tr -cd '0-9.' | cut -d. -f1)"
+        vendor/bin/pimcore-install --no-interaction \
+          --install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile' \
+          --skip-validation
 
-        if [ "${MAJOR:-0}" -ge 2026 ]; then
-          # CoreShopInstallProfile installs a bare Pimcore with the database
-          # wired up and the Studio stack registered; everything
-          # CoreShop-specific follows in the `coreshop:install` step below.
-          # Validation is skipped because the database is already created by
-          # the Setup DB step.
-          vendor/bin/pimcore-install --env=test --no-interaction \
-            --install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile' \
-            --skip-validation
-        else
-          vendor/bin/pimcore-install --env=test --skip-database-config --no-interaction
-        fi
+    - name: Install Pimcore
+      if: ${{ fromJSON(steps.pimcore-version.outputs.major) < 2026 }}
+      run: vendor/bin/pimcore-install --env=test --skip-database-config --no-interaction
+
+    # The install profile registers the Studio and Generic Data Index bundles
+    # but does not build what they need: the class definitions have to be
+    # deployed and the search index created before anything writes objects, so
+    # `coreshop:install` below (and the Behat suite after it) would otherwise
+    # fail on a missing index. Same commands and order as coreshop/CoreShop's
+    # 2026.x behat workflow.
+    - name: Rebuild Pimcore classes and the search index
+      if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
+      run: |
+        bin/console pimcore:deployment:classes-rebuild --force --create-classes
+        bin/console generic-data-index:update:index -r
 
     - name: Install CoreShop
       run: |

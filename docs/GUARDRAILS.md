@@ -147,17 +147,37 @@ Bundle specifics that differ from the core monorepo:
   overwrites the file, such a repo needs the deviation re-applied, or the
   template needs a per-repo sync group.
 
-## Pimcore install step (`behat.yml`)
+## Installing Pimcore 12 vs 2026 (`behat.yml`)
 
-Pimcore 2026.1 replaced the installer's flags with a profile-based interface,
-so `--skip-database-config` no longer exists and the bundles to install come
-from an install profile. `behat.yml` therefore picks the invocation from the
-matrix entry's major version — `>= 2026` gets
-`--install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile'
---skip-validation`, everything below keeps the Pimcore 12 invocation — so the
-workflow keeps serving callers on both lines. Comparing the leading number
-makes that independent of the constraint syntax (`^2026.1`, `~2026.1`,
-`2026.1.*`).
+`behat.yml` serves callers on both release lines, so a "Determine the Pimcore
+major version" step derives the major from the matrix entry (comparing the
+leading number, which holds for `^2026.1`, `~2026.1` and `2026.1.*` alike) and
+every step that differs gates on it. `>= 2026` gets:
+
+- **An OpenSearch client config** (`config/local/opensearch.yaml`) written
+  before the install, because a 2026 install brings up the Generic Data Index
+  and talks to OpenSearch during the install itself.
+- **The profile-based installer.** Pimcore 2026.1 replaced the installer's
+  flags: `--skip-database-config` no longer exists, and the bundles plus the
+  env-var definitions come from an install profile —
+  `--install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile'
+  --skip-validation`. No `--env`: `APP_ENV=test` from the job env already
+  selects the environment.
+- **`pimcore:deployment:classes-rebuild --force --create-classes` and
+  `generic-data-index:update:index -r`** before `coreshop:install`. The profile
+  registers the Studio and Generic Data Index bundles but does not deploy the
+  class definitions or create the search index, so anything writing objects
+  fails without these.
+
+Everything below 2026 keeps the Pimcore 12 invocation unchanged. All of it is
+taken from coreshop/CoreShop's own `behat.yml` on 2026.x — same OpenSearch
+image, same DSN, same command order — so the bundles install Pimcore exactly
+the way the core does.
+
+The one part that cannot be conditional is the **OpenSearch service
+container** (GitHub Actions has no `if:` on `services`), so it starts for
+`^12.*` entries too, where it sits idle. `PIMCORE_OPENSEARCH_DSN` is likewise
+a plain job env var, unread on 12.
 
 ## PHP versions
 
