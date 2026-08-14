@@ -68,7 +68,7 @@ jobs:
   # Studio plugin (yet). Repos without an assets directory skip the build
   # instead of failing.
   detect:
-    runs-on: ${{ fromJSON(inputs.runs_on)[0] }}
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
 
     permissions:
       contents: read
@@ -100,7 +100,7 @@ jobs:
   build:
     needs: detect
     if: ${{ needs.detect.outputs.has_assets == 'true' }}
-    runs-on: ${{ fromJSON(inputs.runs_on)[0] }}
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
 
     steps:
       # The bundles' development branches are not protected, so GITHUB_TOKEN can
