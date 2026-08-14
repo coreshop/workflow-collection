@@ -69,7 +69,7 @@ require a machine-user PAT.
 
 Distribution is handled by a `sync-files.yml` in this repo
 (BetaHuhn/repo-file-sync-action) with group configuration in
-`.github/sync.yml`. Two kinds of files are synced:
+`.github/sync.yml`. Three kinds of files are synced:
 
 1. **Guardrail caller, issues-to-project caller + PR template** (enforce or
    OSS variant per group).
@@ -80,6 +80,8 @@ Distribution is handled by a `sync-files.yml` in this repo
      name (`run-bundle-installer`, e.g. `CoreShopB2BCompanyBundle`) is
      injected via the sync action's **templating** feature, which is why
      each Behat repo has its own sync group.
+3. **Studio frontend build** — `studio-build.yml`, for the bundle repos that
+   ship a Pimcore Studio plugin. See the next section.
 
 **Extensible:** repos can add their own workflows next to the synced ones
 (e.g. `behat_ui.yml` with the UI profile) — the sync only overwrites the
@@ -91,6 +93,46 @@ switched to `*.x` manually — see rollout.
 branches (`'*.x'`), **not** on `main`. The legacy callers in the bundle
 repos still listen on `branches: [main]` and have been dead since the branch
 rename (main → `1.x`/`2.x` on 2026-08-12) — the first sync replaces them.
+
+## Studio frontend build
+
+`.github/workflows/studio-build.yml` builds a bundle's Pimcore Studio plugin;
+`templates/studio-build.yml` is the caller synced into the bundle repos. It
+mirrors coreshop/CoreShop's `shared-frontend-build.yaml`, so the bundles follow
+the same convention: **built assets are produced by CI, not committed by hand.**
+
+- **Pull request** → `verify` job: `check-types` (if the bundle defines the
+  script) plus the production build, nothing committed. PR diffs stay
+  source-only.
+- **Push to a version branch** (`'*.x'`) → `build` job: builds and commits the
+  assets under `src/Resources/public/studio/<build-id>/` as
+  `github-actions[bot]`, message `Build Studio bundle`. `paths-ignore` on that
+  directory keeps the commit from triggering another build.
+
+Bundle specifics that differ from the core monorepo:
+
+- The npm project sits in `src/Resources/assets/pimcore-studio` and its rsbuild
+  config aliases `@coreshop/*` into `vendor/coreshop/core-shop`, so the workflow
+  runs `composer install` (PHP 8.3, `imap` extension included for
+  inbound-email-rules) **before** the frontend build.
+- The bundles gitignore their npm lock file (it holds `file:` paths into
+  `vendor/`), so dependencies are installed with `npm install`, not `npm ci`.
+- The build id is derived in the workflow as a sha256 over the bundle's Studio
+  sources plus the CoreShop Studio sources from `vendor/` — the same
+  deterministic-id idea as `studio-build.ts` in the core. The bundles' local
+  `npm run build` script uses a random UUID, which would rewrite every asset
+  path on every build, so the workflow calls `npx rsbuild build` directly with
+  `CORESHOP_BUILD_ID` set.
+- **Token:** the bundles' version branches carry no ruleset, so the commit is
+  pushed with `GITHUB_TOKEN` and the caller's `contents: write`. If
+  `STUDIO_BUILD_APP_ID` / `STUDIO_BUILD_APP_PRIVATE_KEY` are configured (they
+  are repo secrets on coreshop/CoreShop, whose release branches *are*
+  protected), the workflow uses that app's installation token instead. A
+  refused push fails the job unless the branch simply moved on during the
+  build.
+- Repos without `src/Resources/assets/pimcore-studio` skip the build via the
+  `detect` job, so a bundle can be added to the sync group before its plugin
+  lands.
 
 ## Infrastructure
 
