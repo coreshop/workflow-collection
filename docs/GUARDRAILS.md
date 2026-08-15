@@ -174,6 +174,20 @@ taken from coreshop/CoreShop's own `behat.yml` on 2026.x — same OpenSearch
 image, same DSN, same command order — so the bundles install Pimcore exactly
 the way the core does.
 
+**Env vars are not shared between the two installers.** The 2026 installer
+resolves every parameter by its own exact env var name and otherwise falls
+back to the parameter's default (`ParameterCollector` in Pimcore's
+InstallBundle), so it reads none of the `PIMCORE_INSTALL_*` variables the 12
+installer uses. It needs `PIMCORE_ADMIN_USER`, `PIMCORE_ADMIN_PASSWORD` and
+`DATABASE_URL`; a missing `DATABASE_URL` is the dangerous one, because it
+falls back to `mysql://pimcore:pimcore@127.0.0.1:3306/pimcore` rather than
+failing. Both sets are kept in the job env — each installer ignores the
+other's names. Which variables the installer asks for is decided by the
+profile: `CoreShopInstallProfile::getEnvVarDefinitions()` declares the
+database, OpenSearch and Doctrine-messenger definitions, and nothing else, so
+**that method is the list to check** when a new install error appears. When
+in doubt, diff this workflow's `env:` block against the core's.
+
 The one part that cannot be conditional is the **OpenSearch service
 container** (GitHub Actions has no `if:` on `services`), so it starts for
 `^12.*` entries too, where it sits idle. `PIMCORE_OPENSEARCH_DSN` is likewise
