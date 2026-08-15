@@ -49,6 +49,11 @@ jobs:
       PIMCORE_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
       PIMCORE_INSTALL_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
       PIMCORE_TEST_DB_DSN: "mysql://root:root@127.0.0.1:3306/coreshop_test"
+      # The Pimcore 12 installer's names. The 2026 installer resolves every
+      # parameter by its own exact env var name and falls back to the
+      # parameter's default otherwise, so it reads none of these — it needs the
+      # three below instead. Both sets are kept because this workflow serves
+      # callers on both lines; each installer ignores the other's names.
       PIMCORE_INSTALL_ADMIN_USERNAME: "admin"
       PIMCORE_INSTALL_ADMIN_PASSWORD: "admin"
       PIMCORE_INSTALL_MYSQL_HOST_SOCKET: "127.0.0.1"
@@ -59,6 +64,15 @@ jobs:
       PANTHER_EXTERNAL_BASE_URI: "http://localhost:9080/index_test.php"
       PANTHER_CHROME_ARGUMENTS: "--disable-dev-shm-usage"
       PIMCORE_KERNEL_CLASS: 'Kernel'
+      # Read by the Pimcore 2026 installer, inert on ^12.*: the admin credentials
+      # replace the PIMCORE_INSTALL_ADMIN_* pair above, and DATABASE_URL replaces
+      # the PIMCORE_INSTALL_MYSQL_* set — without it the installer silently falls
+      # back to its default 'mysql://pimcore:pimcore@127.0.0.1:3306/pimcore'
+      # instead of the database the Setup DB step creates. Same values as
+      # coreshop/CoreShop's own 2026.x behat workflow.
+      PIMCORE_ADMIN_USER: "admin"
+      PIMCORE_ADMIN_PASSWORD: "admin"
+      DATABASE_URL: "mysql://root:root@127.0.0.1:3306/coreshop_test"
       # Only consumed on Pimcore 2026, which installs the Generic Data Index and
       # therefore needs a reachable OpenSearch. Inert on ^12.*, where nothing
       # reads it.
