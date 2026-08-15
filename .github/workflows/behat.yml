@@ -30,6 +30,17 @@ on:
         required: false
         type: string
         default: '["^12.0"]'
+      install-profile:
+        description: >
+          Install profile FQCN for the Pimcore 2026 install step (ignored on ^12.*, which has no
+          profile interface). The default lives in coreshop/core-shop's TestBundle and reads the
+          bundle list, the search engine and the messenger transport from CORESHOP_TEST_*
+          environment variables, so a repo can adjust the install without changing this workflow.
+          Repos on a core older than the profile can point this back at
+          CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile.
+        required: false
+        type: string
+        default: 'CoreShop\Bundle\TestBundle\InstallProfile\CoreShopTestInstallProfile'
 
 permissions:
   contents: read
@@ -198,19 +209,22 @@ jobs:
     # interface: --skip-database-config no longer exists (the run aborts with
     # 'The "--skip-database-config" option does not exist'), and the bundles to
     # install plus the env-var definitions now come from an install profile.
-    # CoreShopInstallProfile installs a bare Pimcore with the database wired up
-    # and the Studio stack registered; everything CoreShop-specific follows in
-    # the `coreshop:install` step below. Validation is skipped because the
-    # database already exists — the Setup DB step created it.
+    # The profile (see the install-profile input) installs a bare Pimcore with
+    # the database wired up and the Studio stack registered; everything
+    # CoreShop-specific follows in the `coreshop:install` step below. Validation
+    # is skipped because the database already exists — the Setup DB step created
+    # it.
     #
     # Invocation copied from coreshop/CoreShop's 2026.x behat workflow, which
     # notably does not pass --env: APP_ENV=test from the job env already selects
     # the environment. PIMCORE_KERNEL_CLASS comes from the job env too.
     - name: Install Pimcore (2026 install profile)
       if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
+      env:
+        INSTALL_PROFILE: ${{ inputs.install-profile }}
       run: |
         vendor/bin/pimcore-install --no-interaction \
-          --install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile' \
+          --install-profile "$INSTALL_PROFILE" \
           --skip-validation
 
     - name: Install Pimcore
