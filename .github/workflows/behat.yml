@@ -83,9 +83,6 @@ jobs:
         php: ${{ fromJSON(inputs.php_versions) }}
         pimcore: ${{ fromJSON(inputs.pimcore_versions) }}
         dependencies: [ highest ]
-        exclude:
-          - php: 8.1
-            dependencies: lowest
 
     services:
       database:
@@ -157,7 +154,7 @@ jobs:
 
     - name: Get composer cache directory
       id: composer-cache
-      run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
     - name: Cache composer dependencies
       uses: actions/cache@v4
@@ -223,9 +220,10 @@ jobs:
     # The install profile registers the Studio and Generic Data Index bundles
     # but does not build what they need: the class definitions have to be
     # deployed and the search index created before anything writes objects, so
-    # `coreshop:install` below (and the Behat suite after it) would otherwise
-    # fail on a missing index. Same commands and order as coreshop/CoreShop's
-    # 2026.x behat workflow.
+    # `coreshop:install` below would otherwise fail on a missing index. Same
+    # commands and order as coreshop/CoreShop's 2026.x behat workflow. Classes
+    # created by the installers that follow are picked up by the second index
+    # pass further down.
     - name: Rebuild Pimcore classes and the search index
       if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
       run: |
@@ -247,6 +245,20 @@ jobs:
         bin/console pimcore:bundle:install PimcoreDataHubBundle
         bin/console datahub:graphql:rebuild-definitions
         composer dump-autoload
+
+    # The installers above create class definitions of their own — CoreShop's
+    # via `coreshop:install`, the bundle under test's via its bundle installer —
+    # and each new class needs its own index. The Generic Data Index normally
+    # builds those from queued messages, but no consumer runs in CI, so an index
+    # only exists for the classes that were present when this command last ran.
+    # Without a second pass, every search over a class created after the install
+    # fails with index_not_found_exception once the suite runs.
+    #
+    # This is also why it has to happen before the web server starts: the Behat
+    # UI profile drives requests that search those classes.
+    - name: Update the search index for the newly installed classes
+      if: ${{ fromJSON(steps.pimcore-version.outputs.major) >= 2026 }}
+      run: bin/console generic-data-index:update:index -r
 
     - name: Run Symfony Webserver
       if: ${{ inputs.run-symfony-server }}
