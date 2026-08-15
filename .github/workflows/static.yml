@@ -35,6 +35,17 @@ jobs:
     name: "PHP ${{ matrix.php }}"
 
     steps:
+    # A caller that forgets `secrets: inherit` reaches this workflow with every
+    # secret empty, and lint:container then fails on a Pimcore config error that
+    # points at the bundle instead of at the caller. Failing here names the
+    # actual cause.
+    - name: Check that the org secrets arrived
+      run: |
+        if [ -z "${PIMCORE_SECRET:-}" ]; then
+          echo "::error::PIMCORE_SECRET is empty. The calling workflow is missing 'secrets: inherit' (the coreshop org secrets are not passed to a called workflow by default)."
+          exit 1
+        fi
+
     - uses: actions/checkout@v4
 
     - name: Install PHP

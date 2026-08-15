@@ -104,6 +104,11 @@ the same convention: **built assets are produced by CI, not committed by hand.**
 - **Pull request** → `verify` job: `check-types` (if the bundle defines the
   script) plus the production build, nothing committed. PR diffs stay
   source-only.
+  The type check is **advisory** (`continue-on-error`): the bundles inherit
+  ~100 TS2307 errors from the aliased `@coreshop/*` sources in `vendor/`,
+  which resolve their imports against the CoreShop monorepo's
+  `node_modules` and therefore cannot be fixed from a bundle repo. The
+  production build is the gate; type errors surface as a warning annotation.
 - **Push to a version branch** (`'*.x'`) → `build` job: builds and commits the
   assets under `src/Resources/public/studio/<build-id>/` as
   `github-actions[bot]`, message `Build Studio bundle`. `paths-ignore` on that
@@ -113,8 +118,10 @@ Bundle specifics that differ from the core monorepo:
 
 - The npm project sits in `src/Resources/assets/pimcore-studio` and its rsbuild
   config aliases `@coreshop/*` into `vendor/coreshop/core-shop`, so the workflow
-  runs `composer install` (PHP 8.3, `imap` extension included for
-  inbound-email-rules) **before** the frontend build.
+  runs `composer install` (`imap` extension included for
+  inbound-email-rules) **before** the frontend build. One PHP version is
+  enough, since only the vendor sources are needed; the caller passes it (see
+  "PHP versions" below).
 - The bundles gitignore their npm lock file (it holds `file:` paths into
   `vendor/`), so dependencies are installed with `npm install`, not `npm ci`.
 - The build id is derived in the workflow as a sha256 over the bundle's Studio
@@ -133,6 +140,106 @@ Bundle specifics that differ from the core monorepo:
 - Repos without `src/Resources/assets/pimcore-studio` skip the build via the
   `detect` job, so a bundle can be added to the sync group before its plugin
   lands.
+- The `assets_path` / `output_path` defaults assume the common `src/Resources`
+  layout. A bundle whose sources sit elsewhere (ticketing has `src/Bundle/…`)
+  must pass both inputs in its caller. That is one of the few legitimate
+  reasons to deviate from the synced template — and since a sync run
+  overwrites the file, such a repo needs the deviation re-applied, or the
+  template needs a per-repo sync group.
+
+## Installing Pimcore 12 vs 2026 (`behat.yml`)
+
+`behat.yml` serves callers on both release lines, so a "Determine the Pimcore
+major version" step derives the major from the matrix entry (comparing the
+leading number, which holds for `^2026.1`, `~2026.1` and `2026.1.*` alike) and
+every step that differs gates on it. `>= 2026` gets:
+
+- **An OpenSearch client config** (`config/local/opensearch.yaml`) written
+  before the install, because a 2026 install brings up the Generic Data Index
+  and talks to OpenSearch during the install itself.
+- **The profile-based installer.** Pimcore 2026.1 replaced the installer's
+  flags: `--skip-database-config` no longer exists, and the bundles plus the
+  env-var definitions come from an install profile —
+  `--install-profile 'CoreShop\Bundle\CoreBundle\InstallProfile\CoreShopInstallProfile'
+  --skip-validation`. No `--env`: `APP_ENV=test` from the job env already
+  selects the environment.
+- **`pimcore:deployment:classes-rebuild --force --create-classes` and
+  `generic-data-index:update:index -r`** before `coreshop:install`. The profile
+  registers the Studio and Generic Data Index bundles but does not deploy the
+  class definitions or create the search index, so anything writing objects
+  fails without these.
+
+Everything below 2026 keeps the Pimcore 12 invocation unchanged. All of it is
+taken from coreshop/CoreShop's own `behat.yml` on 2026.x — same OpenSearch
+image, same DSN, same command order — so the bundles install Pimcore exactly
+the way the core does.
+
+The one part that cannot be conditional is the **OpenSearch service
+container** (GitHub Actions has no `if:` on `services`), so it starts for
+`^12.*` entries too, where it sits idle. `PIMCORE_OPENSEARCH_DSN` is likewise
+a plain job env var, unread on 12.
+
+## `secrets: inherit` is mandatory in every caller
+
+A called workflow gets **no** secrets by default, so a caller without
+`secrets: inherit` reaches `static.yml` / `behat.yml` with `PIMCORE_SECRET`
+and friends empty. Pimcore 12.3 tolerated an empty encryption secret; 2026.1
+aborts the container compile with `` `pimcore.encryption.secret` is not set ``,
+which reads like a bundle config problem and is not one. `static.yml` and
+`behat.yml` therefore fail fast with a step that names the missing
+`secrets: inherit`.
+
+All synced templates carry it. Repo-owned workflows next to the synced ones
+(b2b-company `behat_ui.yml`, headless `behat.yml`, the `cla-check.yaml`
+callers) are **not** covered by the sync and have to be fixed in the repo —
+`cla.yaml` reads `secrets.CLA_ACTION_ACCESS_TOKEN`, so its callers need it
+too.
+
+## PHP versions
+
+The reusable workflows default to the CoreShop 5 matrix (`static.yml`,
+`behat.yml`: `["8.3", "8.4"]`; `studio-build.yml`: `8.3`). A release line's
+matrix does **not** belong in those defaults — it belongs in the caller, and
+the synced templates set it: `templates/static.yml` passes
+`php_versions: '["8.4", "8.5"]'` and `templates/studio-build.yml` passes
+`php_version: '8.4'`, matching CoreShop 2026.1's `~8.4 || ~8.5` and
+coreshop/CoreShop's own 2026.x matrix.
+
+This works because the sync only writes to a repo's **default branch**, which
+is the current development line (2026.x). Older release branches keep the
+caller they were synced with, so bumping the templates never changes their
+matrix. When the development line moves on, the templates are updated and the
+next sync carries the new matrix into every default branch.
+
+Bundles must therefore **not** override the matrix locally: a local deviation
+in a synced file is overwritten by the next sync run.
+
+`templates/behat-domain.yml` is still on the reusable default and needs the
+same treatment (plus `pimcore_versions`) once the Behat repos — b2b-company
+and ticketing — are migrated to 2026.1.
+
+## Releasing: moving the `v1` tag
+
+Callers reference the reusable workflows by tag (`@v1`), so **a merge to
+`main` changes nothing for them.** Every change under `.github/workflows/**`
+needs a release, or the callers keep running the old code — or, for a newly
+added workflow, fail with "workflow file issue" and zero jobs because the
+file does not exist at `v1` (this happened to `studio-build.yml`, see #11).
+
+After merging such a change:
+
+```sh
+git fetch origin
+git tag v1.<minor>.<patch> origin/main     # new immutable version tag
+git tag -f v1 origin/main                  # move the major tag
+git push origin v1.<minor>.<patch>
+git push -f origin v1
+```
+
+`v1` is a moving major tag and always points at the newest `v1.x.y`
+(`v1` == `v1.3.1` at the time of writing). Compatible changes move `v1`
+forward; a breaking change gets a `v2` tag and the callers are switched by
+the sync. The tags are moved by hand — nothing in CI does it.
 
 ## Infrastructure
 
@@ -162,7 +269,7 @@ Bundle specifics that differ from the core monorepo:
 - **Versioning** as before: callers reference `@v1` (a tag, not a branch).
   The guardrail is a compatible addition ⇒ move `v1` forward; breaking
   changes ⇒ `v2`. Legacy callers still referencing `@main` are switched to
-  `@v1` by the sync.
+  `@v1` by the sync. See "Releasing: moving the `v1` tag".
 
 ## Rollout
 
