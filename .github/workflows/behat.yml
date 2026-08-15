@@ -239,11 +239,16 @@ jobs:
       run: |
         bin/console pimcore:bundle:install ${{ inputs.run-bundle-installer }} --no-interaction
 
+    # data-hub 2.0 removed `datahub:graphql:rebuild-definitions` — the step died
+    # with "There are no commands defined in the datahub:graphql namespace".
+    # `datahub:configuration:rebuild-workspaces` is its replacement and exists
+    # as far back as data-hub 1.6, so this needs no version gate: every data-hub
+    # any live caller installs has it.
     - name: Install DataHub
       if: ${{ inputs.install-data-hub }}
       run: |
         bin/console pimcore:bundle:install PimcoreDataHubBundle
-        bin/console datahub:graphql:rebuild-definitions
+        bin/console datahub:configuration:rebuild-workspaces
         composer dump-autoload
 
     # The installers above create class definitions of their own — CoreShop's
