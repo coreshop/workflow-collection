@@ -21,6 +21,10 @@ export const DEFAULT_CONFIG = Object.freeze({
   // Base branches PRs must target (R7). Also identifies merge-up PRs whose
   // head is itself a version branch. Empty string disables R7.
   versionBranchPattern: String.raw`^\d+\.x$`,
+  // Head branches that are a merge-up although they are not named after a
+  // version branch — the org's upmerge convention (`upmerge/2.x_2026.x`, as
+  // used by coreshop/CoreShop). Empty string disables the extra pattern.
+  mergeUpBranchPattern: String.raw`^upmerge/`,
   titleTemplate: '#{number} {issueTitle}',
   bots: Object.freeze(['renovate[bot]', 'dependabot[bot]', 'github-actions[bot]']),
   botRequireBody: false,
@@ -303,6 +307,32 @@ export function checkBaseBranch({ baseBranch, versionBranchPattern = DEFAULT_CON
   }
 }
 
+// --- Merge-up detection ---------------------------------------------------------
+
+/**
+ * True when the head branch belongs to a merge-up PR: either a version
+ * branch merged forward directly (`1.x` -> `2.x`) or a branch following the
+ * org's upmerge convention (`upmerge/2.x_2026.x`, title `[UPMERGE] …`).
+ *
+ * Detection is deliberately branch-only. The title is not part of the
+ * condition: it is editable by anyone who can open the PR and therefore adds
+ * no guarantee the branch name does not already give, while a second
+ * required marker would turn a mistyped title into a guardrail failure. The
+ * head branch also names what is actually being merged, which the title does
+ * not have to.
+ */
+export function isMergeUpBranch(
+  branch,
+  {
+    versionBranchPattern = DEFAULT_CONFIG.versionBranchPattern,
+    mergeUpBranchPattern = DEFAULT_CONFIG.mergeUpBranchPattern,
+  } = {},
+) {
+  if (isVersionBranch(branch, versionBranchPattern)) return true
+  if (!mergeUpBranchPattern) return false
+  return new RegExp(mergeUpBranchPattern, 'i').test(branch ?? '')
+}
+
 // --- Bot detection --------------------------------------------------------------
 
 // GraphQL reports bot authors without the "[bot]" suffix ("renovate"), REST
@@ -342,9 +372,13 @@ export function isBotAuthor(login, bots = DEFAULT_CONFIG.bots) {
 export function evaluate(facts, config = {}) {
   const cfg = { ...DEFAULT_CONFIG, ...config }
   const isBot = isBotAuthor(facts.authorLogin, cfg.bots)
-  // Merge-up PRs (e.g. 1.x -> 2.x) have a version branch as their head. They
-  // carry no issue by nature, so R1/R2/R6 and the title autofix are skipped.
-  const isMergeUp = isVersionBranch(facts.branch, cfg.versionBranchPattern)
+  // Merge-up PRs (a version branch merged forward directly, or an
+  // `upmerge/<from>_<to>` branch) carry no issue by nature, so R1/R2/R6 and
+  // the title autofix are skipped.
+  const isMergeUp = isMergeUpBranch(facts.branch, {
+    versionBranchPattern: cfg.versionBranchPattern,
+    mergeUpBranchPattern: cfg.mergeUpBranchPattern,
+  })
   const violations = []
   let issueNumber = null
   let titleFix = null

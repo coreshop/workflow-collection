@@ -27,13 +27,21 @@ function boolEnv(name, fallback) {
   return env(name, String(fallback)) === 'true'
 }
 
+// For the regex inputs an empty string is a meaningful value ("rule off"),
+// so only a completely unset variable falls back to the default.
+function patternEnv(name, fallback) {
+  const value = process.env[name]
+  return value === undefined ? fallback : value
+}
+
 function readConfig() {
   return {
     enforce: boolEnv('INPUT_ENFORCE', DEFAULT_CONFIG.enforce),
     minBodyChars: Number.parseInt(env('INPUT_MIN_BODY_CHARS', String(DEFAULT_CONFIG.minBodyChars)), 10),
     requireIssueOpen: boolEnv('INPUT_REQUIRE_ISSUE_OPEN', DEFAULT_CONFIG.requireIssueOpen),
     branchPattern: env('INPUT_BRANCH_PATTERN', DEFAULT_CONFIG.branchPattern),
-    versionBranchPattern: env('INPUT_VERSION_BRANCH_PATTERN', DEFAULT_CONFIG.versionBranchPattern),
+    versionBranchPattern: patternEnv('INPUT_VERSION_BRANCH_PATTERN', DEFAULT_CONFIG.versionBranchPattern),
+    mergeUpBranchPattern: patternEnv('INPUT_MERGE_UP_BRANCH_PATTERN', DEFAULT_CONFIG.mergeUpBranchPattern),
     titleTemplate: env('INPUT_TITLE_TEMPLATE', DEFAULT_CONFIG.titleTemplate),
     bots: env('INPUT_BOTS', DEFAULT_CONFIG.bots.join(','))
       .split(',')

@@ -42,6 +42,11 @@ on:
         type: string
         required: false
         default: '^\d+\.x$'
+      merge-up-branch-pattern:
+        description: "Case-insensitive regex for head branches that are a merge-up without being named after a version branch (the `upmerge/<from>_<to>` convention). Such PRs skip R1-R4 and R6; R5 and R7 still apply. Empty string disables the extra pattern."
+        type: string
+        required: false
+        default: '^upmerge/'
       title-template:
         description: "Template for the title autofix (R3). Placeholders: {number}, {issueTitle}."
         type: string
@@ -113,6 +118,7 @@ jobs:
           INPUT_REQUIRE_ISSUE_OPEN: ${{ inputs.require-issue-open }}
           INPUT_BRANCH_PATTERN: ${{ inputs.branch-pattern }}
           INPUT_VERSION_BRANCH_PATTERN: ${{ inputs.version-branch-pattern }}
+          INPUT_MERGE_UP_BRANCH_PATTERN: ${{ inputs.merge-up-branch-pattern }}
           INPUT_TITLE_TEMPLATE: ${{ inputs.title-template }}
           INPUT_BOTS: ${{ inputs.bots }}
           INPUT_BOT_REQUIRE_BODY: ${{ inputs.bot-require-body }}

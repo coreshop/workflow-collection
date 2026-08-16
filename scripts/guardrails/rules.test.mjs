@@ -11,6 +11,7 @@ import {
   evaluate,
   extractIssueNumber,
   isBotAuthor,
+  isMergeUpBranch,
   isVersionBranch,
   normalizeCheckContexts,
   strippedBody,
@@ -392,6 +393,42 @@ describe('R7: isVersionBranch / checkBaseBranch', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Merge-up detection
+// ---------------------------------------------------------------------------
+
+describe('isMergeUpBranch', () => {
+  it('recognizes a version branch merged forward directly', () => {
+    assert.equal(isMergeUpBranch('1.x'), true)
+    assert.equal(isMergeUpBranch('2026.x'), true)
+  })
+
+  it('recognizes the upmerge branch convention', () => {
+    assert.equal(isMergeUpBranch('upmerge/2.x_2026.x'), true)
+    assert.equal(isMergeUpBranch('upmerge/5.1_2026.x'), true)
+    assert.equal(isMergeUpBranch('UPMERGE/2.x_2026.x'), true)
+  })
+
+  it('rejects ordinary branches', () => {
+    assert.equal(isMergeUpBranch('issue/123'), false)
+    assert.equal(isMergeUpBranch('main'), false)
+    assert.equal(isMergeUpBranch('feature/upmerge-tooling'), false)
+    assert.equal(isMergeUpBranch(''), false)
+    assert.equal(isMergeUpBranch(undefined), false)
+  })
+
+  it('honors a custom merge-up pattern', () => {
+    const cfg = { mergeUpBranchPattern: String.raw`^merge-forward/` }
+    assert.equal(isMergeUpBranch('merge-forward/2.x', cfg), true)
+    assert.equal(isMergeUpBranch('upmerge/2.x_2026.x', cfg), false)
+  })
+
+  it('falls back to the version-branch pattern when the extra pattern is empty', () => {
+    assert.equal(isMergeUpBranch('upmerge/2.x_2026.x', { mergeUpBranchPattern: '' }), false)
+    assert.equal(isMergeUpBranch('2.x', { mergeUpBranchPattern: '' }), true)
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Bot detection
 // ---------------------------------------------------------------------------
 
@@ -514,6 +551,76 @@ describe('evaluate', () => {
     })
     assert.equal(result.isMergeUp, true)
     assert.deepEqual(result.violations.map((v) => v.rule), ['R7', 'R5'])
+  })
+
+  it('upmerge PR (upmerge/2.x_2026.x -> 2026.x): treated like a merge-up', () => {
+    const result = evaluate({
+      ...humanFacts,
+      branch: 'upmerge/2.x_2026.x',
+      baseBranch: '2026.x',
+      title: '[UPMERGE] 2.x -> 2026.x',
+      body: '',
+      issue: null,
+    })
+    assert.equal(result.isMergeUp, true)
+    assert.deepEqual(result.violations, [])
+    assert.equal(result.issueNumber, null)
+    assert.equal(result.titleFix, null)
+    assert.equal(result.appendClosing, null)
+  })
+
+  it('upmerge PR still fails R5 on red CI and R7 on a wrong base', () => {
+    const result = evaluate({
+      ...humanFacts,
+      branch: 'upmerge/2.x_2026.x',
+      baseBranch: 'main',
+      title: '[UPMERGE] 2.x -> main',
+      body: '',
+      issue: null,
+      checks: [{ name: 'build', kind: 'check', state: 'failure' }],
+    })
+    assert.equal(result.isMergeUp, true)
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R7', 'R5'])
+  })
+
+  it('upmerge PR is judged by the branch, not by the title', () => {
+    const withoutMarker = evaluate({
+      ...humanFacts,
+      branch: 'upmerge/2.x_2026.x',
+      baseBranch: '2026.x',
+      title: 'Bring 2.x forward',
+      body: '',
+      issue: null,
+    })
+    assert.equal(withoutMarker.isMergeUp, true)
+    assert.deepEqual(withoutMarker.violations, [])
+
+    const markerOnly = evaluate({
+      ...humanFacts,
+      branch: 'feature/upmerge',
+      baseBranch: '2026.x',
+      title: '[UPMERGE] 2.x -> 2026.x',
+      body: '',
+      issue: null,
+    })
+    assert.equal(markerOnly.isMergeUp, false)
+    assert.deepEqual(markerOnly.violations.map((v) => v.rule), ['R1', 'R4'])
+  })
+
+  it('upmerge exemption can be switched off per repo', () => {
+    const result = evaluate(
+      {
+        ...humanFacts,
+        branch: 'upmerge/2.x_2026.x',
+        baseBranch: '2026.x',
+        title: '[UPMERGE] 2.x -> 2026.x',
+        body: '',
+        issue: null,
+      },
+      { mergeUpBranchPattern: '' },
+    )
+    assert.equal(result.isMergeUp, false)
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R1', 'R4'])
   })
 
   it('bot author: R1-R3/R6 skipped, R4 off by default, R5 still applies', () => {

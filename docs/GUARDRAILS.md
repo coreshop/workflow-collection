@@ -26,9 +26,26 @@ caller workflow, the logic stays central.
 | **R6** | If the closing reference to the issue from R1 is missing, the guardrail appends `Closes #<number>` to the PR body. | Repair, no violation |
 | **R7** | The PR targets a **version branch** (`^\d+\.x$`, e.g. `2.x`). | Violation |
 
-**Merge-up exception:** PRs whose head branch is itself a version branch
-(e.g. `1.x` → `2.x`) are exempt from R1, R2, R4 and R6 — by nature they have
-no issue and usually no prose body. R5 (green CI) and R7 still apply.
+**Merge-up exception:** merge-up PRs are exempt from R1, R2, R4, R6 and the
+title autofix (R3) — by nature they have no issue and usually no prose body.
+R5 (green CI) and R7 (base is a version branch) still apply, and they are the
+rules that matter here: an upmerge that breaks CI or lands on the wrong
+branch is exactly what the guardrail should catch.
+
+A PR counts as a merge-up when its **head branch** is either
+
+- a version branch merged forward directly (`1.x` → `2.x`,
+  `version-branch-pattern`), or
+- an upmerge branch (`merge-up-branch-pattern`, default `^upmerge/`) — the
+  org's convention for forward merges, e.g. `upmerge/2.x_2026.x` with the
+  title `[UPMERGE] 2.x -> 2026.x`, as used by coreshop/CoreShop.
+
+Detection is **branch-only on purpose**. The `[UPMERGE]` title marker is not
+part of the condition: the title is editable by anyone who can open the PR,
+so requiring it adds no guarantee the branch name does not already give,
+while a mistyped title would turn a legitimate upmerge into a guardrail
+failure. Setting `merge-up-branch-pattern: ''` disables the extra pattern for
+a repo, leaving only version-branch heads exempt.
 
 ## Two modes
 
