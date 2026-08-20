@@ -154,15 +154,18 @@ Bundle specifics that differ from the core monorepo:
   protected), the workflow uses that app's installation token instead. A
   refused push fails the job unless the branch simply moved on during the
   build.
-- Repos without `src/Resources/assets/pimcore-studio` skip the build via the
-  `detect` job, so a bundle can be added to the sync group before its plugin
-  lands.
-- The `assets_path` / `output_path` defaults assume the common `src/Resources`
-  layout. A bundle whose sources sit elsewhere (ticketing has `src/Bundle/…`)
-  must pass both inputs in its caller. That is one of the few legitimate
-  reasons to deviate from the synced template — and since a sync run
-  overwrites the file, such a repo needs the deviation re-applied, or the
-  template needs a per-repo sync group.
+- Repos with no Studio plugin skip the build via the `detect` job, so a bundle
+  can be added to the sync group before its plugin lands.
+- **The `detect` job also resolves the paths.** The plugin sits under the
+  bundle's PSR-4 root, which is `src` in most repos and `src/Bundle` in others
+  (ticketing, headless), so no single default fits all of them. `detect` looks
+  in both, derives `output_path` from what it finds, and passes them to the
+  build job. `assets_path` / `output_path` remain as inputs for a layout it
+  does not know, but no bundle needs to set them — which is the point: the
+  caller is a synced file, so a local override would be overwritten by the
+  next sync run, and the build would then quietly find no assets and skip.
+  The caller's `paths-ignore` uses `'**/Resources/public/studio/**'` for the
+  same reason.
 
 ## Installing Pimcore 12 vs 2026 (`behat.yml`)
 
