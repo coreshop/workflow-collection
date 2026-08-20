@@ -20,7 +20,10 @@ on:
   push:
     branches: [ '*.x' ]
     paths-ignore:
-      - 'src/Resources/public/studio/**'
+      # Matches the built assets under either PSR-4 root (src or src/Bundle),
+      # so this one file fits every bundle — the reusable workflow resolves the
+      # actual directory itself.
+      - '**/Resources/public/studio/**'
   workflow_dispatch:
 
 permissions:
