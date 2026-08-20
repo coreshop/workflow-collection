@@ -229,15 +229,21 @@ callers) are **not** covered by the sync and have to be fixed in the repo —
 `cla.yaml` reads `secrets.CLA_ACTION_ACCESS_TOKEN`, so its callers need it
 too.
 
-## PHP versions
+## PHP and Pimcore versions
 
 The reusable workflows default to the CoreShop 5 matrix (`static.yml`,
-`behat.yml`: `["8.3", "8.4"]`; `studio-build.yml`: `8.3`). A release line's
-matrix does **not** belong in those defaults — it belongs in the caller, and
-the synced templates set it: `templates/static.yml` passes
-`php_versions: '["8.4", "8.5"]'` and `templates/studio-build.yml` passes
-`php_version: '8.4'`, matching CoreShop 2026.1's `~8.4 || ~8.5` and
-coreshop/CoreShop's own 2026.x matrix.
+`behat.yml`: `["8.3", "8.4"]` and Pimcore `["^12.0"]`; `studio-build.yml`:
+`8.3`). A release line's matrix does **not** belong in those defaults — it
+belongs in the caller, and **every** synced template sets what it needs:
+
+| Template | Passes |
+|---|---|
+| `static.yml` | `php_versions: '["8.4", "8.5"]'` |
+| `behat-domain.yml` | `php_versions: '["8.4", "8.5"]'`, `pimcore_versions: '["^2026.1"]'` |
+| `studio-build.yml` | `php_version: '8.4'` (both jobs) |
+
+Those values match CoreShop 2026.1's `~8.4 || ~8.5` and coreshop/CoreShop's
+own 2026.x matrix.
 
 This works because the sync only writes to a repo's **default branch**, which
 is the current development line (2026.x). Older release branches keep the
@@ -246,11 +252,15 @@ matrix. When the development line moves on, the templates are updated and the
 next sync carries the new matrix into every default branch.
 
 Bundles must therefore **not** override the matrix locally: a local deviation
-in a synced file is overwritten by the next sync run.
+in a synced file is overwritten by the next sync run, and the job then fails
+on a matrix that no longer matches the bundle. That is exactly what happened
+to ticketing-bundle, whose local `pimcore_versions` override survived only
+until the first sync run.
 
-`templates/behat-domain.yml` is still on the reusable default and needs the
-same treatment (plus `pimcore_versions`) once the Behat repos — b2b-company
-and ticketing — are migrated to 2026.1.
+**When a template gains a new version-bearing input, it belongs in the table
+above.** The check is mechanical: any input of a reusable workflow whose
+default encodes a release line has to be passed explicitly by every template
+that calls it.
 
 ## Releasing: moving the `v1` tag
 
