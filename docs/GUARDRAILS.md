@@ -239,10 +239,10 @@ belongs in the caller, and **every** synced template sets what it needs:
 | Template | Passes |
 |---|---|
 | `static.yml` | `php_versions: '["8.4", "8.5"]'` |
-| `behat-domain.yml` | `php_versions: '["8.4", "8.5"]'`, `pimcore_versions: '["^2026.1"]'` |
+| `behat-domain.yml` | `php_versions: '["8.4", "8.5"]'`, `pimcore_versions: '["^2026.2"]'` |
 | `studio-build.yml` | `php_version: '8.4'` (both jobs) |
 
-Those values match CoreShop 2026.1's `~8.4 || ~8.5` and coreshop/CoreShop's
+Those values match CoreShop 2026.2's `~8.4 || ~8.5` and coreshop/CoreShop's
 own 2026.x matrix.
 
 This works because the sync only writes to a repo's **default branch**, which
