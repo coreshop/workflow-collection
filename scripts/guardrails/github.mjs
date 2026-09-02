@@ -30,8 +30,8 @@ export function requireEnv(name) {
 
 // The one bundled query that fetches everything a guardrail run needs in a
 // single roundtrip: PR core data, labels, linked issues, the referenced
-// issue (via @include so the lookup is skipped when R1 already failed) and
-// the full check/status rollup of the head commit.
+// issue (via @include so the lookup is skipped when R1 already failed), the
+// milestone (R8) and the full check/status rollup of the head commit.
 const PR_BUNDLE_QUERY = /* GraphQL */ `
   query PrBundle($owner: String!, $repo: String!, $pr: Int!, $issue: Int!, $checkIssue: Boolean!) {
     repository(owner: $owner, name: $repo) {
@@ -50,6 +50,9 @@ const PR_BUNDLE_QUERY = /* GraphQL */ `
           login
         }
         mergeable
+        milestone {
+          title
+        }
         labels(first: 100) {
           nodes {
             name
@@ -260,6 +263,7 @@ export class GitHubClient {
         headSha: prNode.headRefOid,
         authorLogin: prNode.author?.login ?? '',
         mergeable: prNode.mergeable ?? 'UNKNOWN',
+        milestone: prNode.milestone?.title ?? null,
         labels: (prNode.labels?.nodes ?? []).map((l) => l.name),
         linkedIssueNumbers: (prNode.closingIssuesReferences?.nodes ?? []).map((n) => n.number),
       },

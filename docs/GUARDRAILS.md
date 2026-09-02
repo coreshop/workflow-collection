@@ -25,6 +25,7 @@ caller workflow, the logic stays central.
 | **R5** | All check runs and commit statuses on the head commit are green (Behat/static/CLA included), no merge conflicts. Pending checks trigger nothing — only a final failure or a conflict counts. | Violation |
 | **R6** | If the closing reference to the issue from R1 is missing, the guardrail appends `Closes #<number>` to the PR body. | Repair, no violation |
 | **R7** | The PR targets a **version branch** (`^\d+\.x$`, e.g. `2.x`). | Violation |
+| **R8** | A **release PR** (head `release/<version>`) carries the milestone named after the released version (`release/5.1.0` → milestone `5.1.0`; a leading `v` is tolerated). Only evaluated for release PRs. | Violation |
 
 **Merge-up exception:** merge-up PRs are exempt from R1, R2, R4, R6 and the
 title autofix (R3) — by nature they have no issue and usually no prose body.
@@ -47,6 +48,23 @@ while a mistyped title would turn a legitimate upmerge into a guardrail
 failure. Setting `merge-up-branch-pattern: ''` disables the extra pattern for
 a repo, leaving only version-branch heads exempt.
 
+**Release exception:** release PRs are the other issue-less PR type of the
+release process and skip the same rules as a merge-up (R1, R2, R4, R6 and the
+title autofix R3): there is no issue behind a release, and the changelog diff
+is its description. R5 and R7 still apply, and **R8** takes the place of the
+issue link — the milestone is what ties the PR to the version it releases and
+what gets closed with it.
+
+A PR counts as a release when its **head branch** matches
+`release-branch-pattern` (default `^release/(\d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)$`,
+case-insensitive, capture group 1 = the version), e.g. `release/5.1.0` with
+the title `[Release] 5.1.0` and base `5.1`, as coreshop/CoreShop creates them.
+Pre-release suffixes (`release/2026.1.0-beta.1`) are accepted and must match
+the milestone exactly — a `-beta.1` release does not satisfy the milestone
+of the final version. Detection is branch-only for the same reasons as for
+merge-ups; `release-branch-pattern: ''` switches it (and R8) off, after which
+a `release/…` branch is judged by the normal rules again.
+
 ## Two modes
 
 - **Private bundle repos** (b2b-company, ticketing, headless, …):
@@ -65,7 +83,8 @@ a repo, leaving only version-branch heads exempt.
 - **Draft PRs** are skipped (single exception: title autofix R3). The full
   check starts on "Ready for review".
 - **Bot PRs** (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`,
-  configurable): R1–R3 and R6 are skipped, R5 still applies.
+  configurable): R1–R3 and R6 are skipped, R5 still applies. A bot-authored
+  release PR is still held to R8.
 - **Bypass** exclusively via the **`guardrail-bypass`** label: only people
   with `admin`/`maintain` may set it (collaborator API check), a permanent
   audit comment records person, role and time. For anyone else the label is
