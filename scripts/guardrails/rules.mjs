@@ -25,6 +25,11 @@ export const DEFAULT_CONFIG = Object.freeze({
   // version branch — the org's upmerge convention (`upmerge/2.x_2026.x`, as
   // used by coreshop/CoreShop). Empty string disables the extra pattern.
   mergeUpBranchPattern: String.raw`^upmerge/`,
+  // Head branches of release PRs (`release/5.1.0`, as used by
+  // coreshop/CoreShop). Case-insensitive. Capture group 1 must contain the
+  // released version; R8 requires a milestone of that name. Empty string
+  // disables release detection (and with it R8).
+  releaseBranchPattern: String.raw`^release/(\d+(?:\.\d+)+(?:-[0-9A-Za-z.]+)?)$`,
   titleTemplate: '#{number} {issueTitle}',
   bots: Object.freeze(['renovate[bot]', 'dependabot[bot]', 'github-actions[bot]']),
   botRequireBody: false,
@@ -333,6 +338,60 @@ export function isMergeUpBranch(
   return new RegExp(mergeUpBranchPattern, 'i').test(branch ?? '')
 }
 
+// --- Release detection + R8: milestone ------------------------------------------
+
+/**
+ * Extract the released version from a release head branch (`release/5.1.0`
+ * -> `5.1.0`). Returns null when the branch is not a release branch or the
+ * pattern is disabled.
+ */
+export function extractReleaseVersion(branch, releaseBranchPattern = DEFAULT_CONFIG.releaseBranchPattern) {
+  if (!releaseBranchPattern) return null
+  const match = new RegExp(releaseBranchPattern, 'i').exec(branch ?? '')
+  if (!match || !match[1]) return null
+  return match[1]
+}
+
+/**
+ * True when the head branch belongs to a release PR (`release/<version>`,
+ * title `[Release] <version>` by convention). Like the merge-up detection
+ * this is branch-only: the title is not part of the condition.
+ */
+export function isReleaseBranch(branch, releaseBranchPattern = DEFAULT_CONFIG.releaseBranchPattern) {
+  return extractReleaseVersion(branch, releaseBranchPattern) !== null
+}
+
+// A leading "v" on the milestone is tolerated (`v5.1.0` releases `5.1.0`).
+function normalizeVersion(value) {
+  return (value ?? '').trim().replace(/^v/i, '')
+}
+
+/**
+ * R8 — a release PR must carry the milestone of the version it releases.
+ * The milestone is what the release closes, so a release PR without one (or
+ * with the wrong one) would leave the milestone open or close the wrong one.
+ * `milestone` is the milestone title or null.
+ */
+export function checkMilestone({ version, milestone }) {
+  if (!milestone) {
+    return {
+      rule: 'R8',
+      title: 'Release milestone',
+      message: `The release PR for \`${version}\` has no milestone.`,
+      action: `Assign the milestone \`${version}\` to the PR (create it first if it does not exist yet). The milestone is closed with the release.`,
+    }
+  }
+  if (normalizeVersion(milestone) !== normalizeVersion(version)) {
+    return {
+      rule: 'R8',
+      title: 'Release milestone',
+      message: `The release PR for \`${version}\` carries the milestone \`${milestone}\`, which does not match the released version.`,
+      action: `Assign the milestone \`${version}\` to the PR, or rename the branch after the version the milestone stands for.`,
+    }
+  }
+  return null
+}
+
 // --- Bot detection --------------------------------------------------------------
 
 // GraphQL reports bot authors without the "[bot]" suffix ("renovate"), REST
@@ -363,9 +422,11 @@ export function isBotAuthor(login, bots = DEFAULT_CONFIG.bots) {
  * @param {string} facts.mergeable         'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN'
  * @param {string[]} facts.ownCheckNames   check-run names of the guardrail itself
  * @param {number[]} facts.linkedIssueNumbers  issues already linked via closing references
+ * @param {string|null} facts.milestone    milestone title (R8)
  * @param {object} config                  see DEFAULT_CONFIG
  *
- * @returns {{ isBot: boolean, isMergeUp: boolean, issueNumber: number|null,
+ * @returns {{ isBot: boolean, isMergeUp: boolean, isRelease: boolean,
+ *             releaseVersion: string|null, issueNumber: number|null,
  *             violations: Array, ciPending: boolean, titleFix: string|null,
  *             appendClosing: string|null }}
  */
@@ -379,6 +440,11 @@ export function evaluate(facts, config = {}) {
     versionBranchPattern: cfg.versionBranchPattern,
     mergeUpBranchPattern: cfg.mergeUpBranchPattern,
   })
+  // Release PRs (`release/<version>`) are the other issue-less PR type of the
+  // release process: the changelog diff is their description. They skip the
+  // same rules as a merge-up and are held to R8 (milestone) instead.
+  const releaseVersion = extractReleaseVersion(facts.branch, cfg.releaseBranchPattern)
+  const isRelease = releaseVersion !== null
   const violations = []
   let issueNumber = null
   let titleFix = null
@@ -386,7 +452,7 @@ export function evaluate(facts, config = {}) {
 
   // Bot PRs (Renovate, Dependabot, the CD bot's sync PRs, ...) have no
   // issue/<n> branches and no tickets: R1-R3 and R6 are skipped by design.
-  if (!isBot && !isMergeUp) {
+  if (!isBot && !isMergeUp && !isRelease) {
     const branchResult = checkBranch({ branch: facts.branch, branchPattern: cfg.branchPattern })
     issueNumber = branchResult.issueNumber
     if (branchResult.violation) {
@@ -417,12 +483,19 @@ export function evaluate(facts, config = {}) {
     }
   }
 
-  if ((!isBot || cfg.botRequireBody) && !isMergeUp) {
+  if ((!isBot || cfg.botRequireBody) && !isMergeUp && !isRelease) {
     const bodyViolation = checkBody({ body: facts.body, minBodyChars: cfg.minBodyChars })
     if (bodyViolation) violations.push(bodyViolation)
   }
 
-  // R7 applies to everyone — a merge-up must target a version branch too.
+  // R8 replaces the issue link for release PRs: the milestone is what ties
+  // the PR to the version it releases.
+  if (isRelease) {
+    const milestoneViolation = checkMilestone({ version: releaseVersion, milestone: facts.milestone })
+    if (milestoneViolation) violations.push(milestoneViolation)
+  }
+
+  // R7 applies to everyone — a merge-up or release must target a version branch too.
   const baseViolation = checkBaseBranch({
     baseBranch: facts.baseBranch,
     versionBranchPattern: cfg.versionBranchPattern,
@@ -437,5 +510,15 @@ export function evaluate(facts, config = {}) {
   })
   violations.push(...ci.violations)
 
-  return { isBot, isMergeUp, issueNumber, violations, ciPending: ci.pending, titleFix, appendClosing }
+  return {
+    isBot,
+    isMergeUp,
+    isRelease,
+    releaseVersion,
+    issueNumber,
+    violations,
+    ciPending: ci.pending,
+    titleFix,
+    appendClosing,
+  }
 }

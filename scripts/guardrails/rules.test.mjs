@@ -7,11 +7,14 @@ import {
   checkBranch,
   checkCi,
   checkIssue,
+  checkMilestone,
   closingReference,
   evaluate,
   extractIssueNumber,
+  extractReleaseVersion,
   isBotAuthor,
   isMergeUpBranch,
+  isReleaseBranch,
   isVersionBranch,
   normalizeCheckContexts,
   strippedBody,
@@ -429,6 +432,80 @@ describe('isMergeUpBranch', () => {
 })
 
 // ---------------------------------------------------------------------------
+// Release detection + R8 — milestone
+// ---------------------------------------------------------------------------
+
+describe('extractReleaseVersion / isReleaseBranch', () => {
+  it('recognizes the release branch convention and extracts the version', () => {
+    assert.equal(extractReleaseVersion('release/5.1.0'), '5.1.0')
+    assert.equal(extractReleaseVersion('release/4.1.13'), '4.1.13')
+    assert.equal(extractReleaseVersion('release/2026.2.0'), '2026.2.0')
+    assert.equal(isReleaseBranch('release/5.1.0'), true)
+  })
+
+  it('accepts pre-release suffixes', () => {
+    assert.equal(extractReleaseVersion('release/2026.1.0-beta.1'), '2026.1.0-beta.1')
+    assert.equal(extractReleaseVersion('release/5.2.0-RC1'), '5.2.0-RC1')
+  })
+
+  it('is case-insensitive', () => {
+    assert.equal(extractReleaseVersion('Release/5.1.0'), '5.1.0')
+  })
+
+  it('rejects branches that are not a release', () => {
+    assert.equal(extractReleaseVersion('release/foo'), null)
+    assert.equal(extractReleaseVersion('release/5'), null)
+    assert.equal(extractReleaseVersion('release/5.1.0/fix'), null)
+    assert.equal(extractReleaseVersion('issue/123'), null)
+    assert.equal(extractReleaseVersion('upmerge/5.1_2026.x'), null)
+    assert.equal(extractReleaseVersion('feature/release-notes'), null)
+    assert.equal(extractReleaseVersion(''), null)
+    assert.equal(extractReleaseVersion(undefined), null)
+    assert.equal(isReleaseBranch('issue/123'), false)
+  })
+
+  it('honors a custom pattern', () => {
+    const custom = String.raw`^rel-(\d+\.\d+\.\d+)$`
+    assert.equal(extractReleaseVersion('rel-1.2.3', custom), '1.2.3')
+    assert.equal(extractReleaseVersion('release/1.2.3', custom), null)
+  })
+
+  it('an empty pattern disables release detection', () => {
+    assert.equal(extractReleaseVersion('release/5.1.0', ''), null)
+    assert.equal(isReleaseBranch('release/5.1.0', ''), false)
+  })
+})
+
+describe('R8: checkMilestone', () => {
+  it('passes when the milestone matches the released version', () => {
+    assert.equal(checkMilestone({ version: '5.1.0', milestone: '5.1.0' }), null)
+  })
+
+  it('tolerates a leading v and surrounding whitespace on the milestone', () => {
+    assert.equal(checkMilestone({ version: '5.1.0', milestone: 'v5.1.0' }), null)
+    assert.equal(checkMilestone({ version: '5.1.0', milestone: ' 5.1.0 ' }), null)
+  })
+
+  it('flags a missing milestone', () => {
+    const violation = checkMilestone({ version: '5.1.0', milestone: null })
+    assert.equal(violation.rule, 'R8')
+    assert.match(violation.message, /no milestone/)
+    assert.match(violation.action, /5\.1\.0/)
+  })
+
+  it('flags a milestone of a different version', () => {
+    const violation = checkMilestone({ version: '5.1.0', milestone: '5.0.2' })
+    assert.equal(violation.rule, 'R8')
+    assert.match(violation.message, /5\.0\.2/)
+    assert.match(violation.message, /does not match/)
+  })
+
+  it('does not treat a pre-release as its final version', () => {
+    assert.equal(checkMilestone({ version: '2026.1.0-beta.1', milestone: '2026.1.0' }).rule, 'R8')
+  })
+})
+
+// ---------------------------------------------------------------------------
 // Bot detection
 // ---------------------------------------------------------------------------
 
@@ -621,6 +698,107 @@ describe('evaluate', () => {
     )
     assert.equal(result.isMergeUp, false)
     assert.deepEqual(result.violations.map((v) => v.rule), ['R1', 'R4'])
+  })
+
+  it('release PR (release/5.1.0 -> 5.1): R1/R2/R4/R6 skipped, R8 passes with the milestone', () => {
+    const result = evaluate(
+      {
+        ...humanFacts,
+        branch: 'release/5.1.0',
+        baseBranch: '5.1',
+        title: '[Release] 5.1.0',
+        body: '',
+        issue: null,
+        milestone: '5.1.0',
+      },
+      { versionBranchPattern: String.raw`^\d+\.(x|\d+)$` },
+    )
+    assert.equal(result.isRelease, true)
+    assert.equal(result.releaseVersion, '5.1.0')
+    assert.equal(result.isMergeUp, false)
+    assert.deepEqual(result.violations, [])
+    assert.equal(result.issueNumber, null)
+    assert.equal(result.titleFix, null)
+    assert.equal(result.appendClosing, null)
+  })
+
+  it('release PR without a milestone fails R8', () => {
+    const result = evaluate({
+      ...humanFacts,
+      branch: 'release/2.1.0',
+      baseBranch: '2.x',
+      title: '[Release] 2.1.0',
+      body: '',
+      issue: null,
+      milestone: null,
+    })
+    assert.equal(result.isRelease, true)
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R8'])
+  })
+
+  it('release PR with the wrong milestone fails R8', () => {
+    const result = evaluate({
+      ...humanFacts,
+      branch: 'release/2.1.0',
+      baseBranch: '2.x',
+      title: '[Release] 2.1.0',
+      body: '',
+      issue: null,
+      milestone: '2.0.5',
+    })
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R8'])
+    assert.match(result.violations[0].message, /2\.0\.5/)
+  })
+
+  it('release PR still fails R5 on red CI and R7 on a wrong base', () => {
+    const result = evaluate({
+      ...humanFacts,
+      branch: 'release/2.1.0',
+      baseBranch: 'main',
+      title: '[Release] 2.1.0',
+      body: '',
+      issue: null,
+      milestone: '2.1.0',
+      checks: [{ name: 'build', kind: 'check', state: 'failure' }],
+    })
+    assert.equal(result.isRelease, true)
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R7', 'R5'])
+  })
+
+  it('release PR is judged by the branch, not by the title', () => {
+    const markerOnly = evaluate({
+      ...humanFacts,
+      branch: 'feature/release',
+      baseBranch: '2.x',
+      title: '[Release] 2.1.0',
+      body: '',
+      issue: null,
+      milestone: '2.1.0',
+    })
+    assert.equal(markerOnly.isRelease, false)
+    assert.deepEqual(markerOnly.violations.map((v) => v.rule), ['R1', 'R4'])
+  })
+
+  it('release detection can be switched off per repo', () => {
+    const result = evaluate(
+      {
+        ...humanFacts,
+        branch: 'release/2.1.0',
+        baseBranch: '2.x',
+        title: '[Release] 2.1.0',
+        body: '',
+        issue: null,
+        milestone: '2.1.0',
+      },
+      { releaseBranchPattern: '' },
+    )
+    assert.equal(result.isRelease, false)
+    assert.deepEqual(result.violations.map((v) => v.rule), ['R1', 'R4'])
+  })
+
+  it('a milestone on an ordinary PR is neither required nor checked', () => {
+    assert.deepEqual(evaluate({ ...humanFacts, milestone: null }).violations, [])
+    assert.deepEqual(evaluate({ ...humanFacts, milestone: '9.9.9' }).violations, [])
   })
 
   it('bot author: R1-R3/R6 skipped, R4 off by default, R5 still applies', () => {

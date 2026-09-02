@@ -42,6 +42,7 @@ function readConfig() {
     branchPattern: env('INPUT_BRANCH_PATTERN', DEFAULT_CONFIG.branchPattern),
     versionBranchPattern: patternEnv('INPUT_VERSION_BRANCH_PATTERN', DEFAULT_CONFIG.versionBranchPattern),
     mergeUpBranchPattern: patternEnv('INPUT_MERGE_UP_BRANCH_PATTERN', DEFAULT_CONFIG.mergeUpBranchPattern),
+    releaseBranchPattern: patternEnv('INPUT_RELEASE_BRANCH_PATTERN', DEFAULT_CONFIG.releaseBranchPattern),
     titleTemplate: env('INPUT_TITLE_TEMPLATE', DEFAULT_CONFIG.titleTemplate),
     bots: env('INPUT_BOTS', DEFAULT_CONFIG.bots.join(','))
       .split(',')
@@ -130,6 +131,7 @@ async function processPr({ api, prRef, event, eventName, cfg, ownJobNames }) {
       mergeable: pr.mergeable,
       ownCheckNames: ownJobNames,
       linkedIssueNumbers: pr.linkedIssueNumbers,
+      milestone: pr.milestone,
     },
     cfg,
   )
