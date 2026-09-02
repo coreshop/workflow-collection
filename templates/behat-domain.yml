@@ -34,13 +34,13 @@ jobs:
     # defaults because it belongs to a release line, not to the CI system: this
     # template is only ever written to a repo's default branch, which is the
     # current development line (2026.x). Its bundles require ~8.4 || ~8.5 and
-    # CoreShop 2026.1, so the workflow's CoreShop 5 defaults (8.3/8.4, Pimcore
+    # CoreShop 2026.2, so the workflow's CoreShop 5 defaults (8.3/8.4, Pimcore
     # ^12.0) cannot even `composer install` here. Older release branches keep
     # the caller they were synced with, so their matrix stays whatever was
     # correct for them. Same reasoning as templates/static.yml.
     with:
       php_versions: '["8.4", "8.5"]'
-      pimcore_versions: '["^2026.1"]'
+      pimcore_versions: '["^2026.2"]'
       install-data-hub: false
       run-symfony-server: false
       run-bundle-installer: "{{ bundle }}"
