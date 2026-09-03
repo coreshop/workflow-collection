@@ -6,46 +6,41 @@
 
 name: Studio Frontend Build
 
+# Only the Studio sources and what the build inlines from vendor/ influence the
+# packaged build, so only they trigger a run. The commit that carries the
+# packaged build touches nothing but Resources/build-dist, which is not in
+# this list, so it never triggers another (no-op) run. It deliberately carries
+# no `[skip ci]` marker.
 on:
-  # Pull requests only verify that the Studio plugin type-checks and builds.
-  # Nothing is committed, so the diff of a pull request stays limited to the
-  # actual source changes.
   pull_request:
     branches: [ '*.x' ]
-  # The built assets are committed once per push to a development branch, which
-  # is what the release tag and the composer dist package pick up.
-  #
-  # That commit only touches the built assets, so `paths-ignore` keeps it from
-  # triggering another (no-op) build.
+    paths:
+      - 'src/**/Resources/assets/pimcore-studio/**'
+      - 'composer.json'
+      - '.github/workflows/studio-build.yml'
+  # Pushes to a version branch and to release branches commit the packaged
+  # build. The release branch build makes sure a release pull request already
+  # carries the final archive, so the tag created right after the merge is
+  # complete.
   push:
-    branches: [ '*.x' ]
-    paths-ignore:
-      # Matches the built assets under either PSR-4 root (src or src/Bundle),
-      # so this one file fits every bundle — the reusable workflow resolves the
-      # actual directory itself.
-      - '**/Resources/public/studio/**'
+    branches: [ '*.x', 'release/**' ]
+    paths:
+      - 'src/**/Resources/assets/pimcore-studio/**'
+      - 'composer.json'
+      - '.github/workflows/studio-build.yml'
   workflow_dispatch:
+
+# A newer push to the same branch supersedes a running build; the commit job of
+# the reusable workflow only ever pushes the archive of the build it belongs to.
+concurrency:
+  group: studio-build-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  # Pull requests and manual runs verify only. Gating on `push` rather than on
-  # "not a pull request" keeps a manual run on a feature branch from committing
-  # assets to that branch.
-  verify:
-    if: ${{ github.event_name != 'push' }}
-    permissions:
-      contents: read
-    uses: coreshop/workflow-collection/.github/workflows/studio-build.yml@v1
-    secrets: inherit
-    with:
-      commit: false
-      # See the note on php_version in the build job below.
-      php_version: '8.4'
-
   build:
-    if: ${{ github.event_name == 'push' }}
     permissions:
       contents: write
     uses: coreshop/workflow-collection/.github/workflows/studio-build.yml@v1
@@ -53,10 +48,14 @@ jobs:
     # STUDIO_BUILD_APP_* credentials.
     secrets: inherit
     with:
-      commit: true
-      # Like the static-test matrix, the PHP version belongs to a release line:
-      # this template only lands on a repo's default branch (2026.x), whose
-      # bundles require ~8.4 || ~8.5, so the reusable workflow's CoreShop 5
-      # default of 8.3 cannot `composer install` here. Only the vendor sources
-      # are needed for the frontend build, so one version is enough.
+      # Pull requests from this repository get their archive committed like the
+      # version and release branches do, so a pull request always carries the
+      # build of its own sources. Pull requests from forks and manual runs
+      # build for verification only: a fork must not get its code near a
+      # write-capable token, and a manual run on a feature branch must not
+      # push to it.
+      commit: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+      # The template defaults to PHP 8.3; a CoreShop 2026.x bundle needs 8.4 for
+      # `composer install`. Only the vendor sources are needed, so one version
+      # is enough. See docs/GUARDRAILS.md, "PHP and Pimcore versions".
       php_version: '8.4'
