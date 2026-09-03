@@ -1,43 +1,103 @@
 name: Studio Frontend Build
 
-# Builds a bundle's Pimcore Studio plugin and — on pushes to a development
-# branch — commits the built assets back to that branch.
+# Builds a repository's Pimcore Studio plugin(s) and commits the packaged builds back to the
+# branch. One reusable workflow serves both layouts:
 #
-# This is the bundle counterpart to coreshop/CoreShop's shared-frontend-build
-# workflow. Two things differ from the core monorepo:
+#   * The bundle repos: the npm project lives inside the bundle
+#     (src/Resources/assets/pimcore-studio), its rsbuild config aliases @coreshop/* into
+#     vendor/coreshop/core-shop, so the PHP dependencies have to be installed first; the lock
+#     file is not committed (it contains machine-local `file:` paths into vendor/), so
+#     dependencies are installed with `npm install`. The workflow derives the build id,
+#     builds and packages the one plugin.
+#   * The core monorepo (coreshop/CoreShop): the npm project is the repository root,
+#     `npm ci` installs from the lock file, and `npm run build` builds and packages all
+#     bundles itself. The caller passes `composer: false`, its own commands and
+#     `package: false`; see templates/studio-build-core.yml.
 #
-#   * The npm project lives inside the bundle (src/Resources/assets/pimcore-studio)
-#     and its rsbuild config aliases @coreshop/* into vendor/coreshop/core-shop,
-#     so the PHP dependencies have to be installed before the frontend build.
-#   * The bundles do not commit their npm lock file (it is gitignored because
-#     it contains machine-local `file:` paths into vendor/), so dependencies are
-#     installed with `npm install` rather than `npm ci`.
+# What gets committed is Pimcore's build archive model (pimcore/studio-ui-bundle#3779): the
+# source-derived build id is the identity of a build, and the build is committed as ONE
+# archive per bundle, Resources/build-dist/build-<id>.zip. The expanded build is gitignored
+# and reconstructed from the archive by Pimcore's BuildArchiveExtractor at cache warmup. The
+# compiled output is not byte-reproducible (Rspack 1.x renders the Module Federation runtime
+# data in hash-map order), so an existing archive for the current id is kept untouched: a
+# commit only ever appears when the sources actually changed.
+#
+# The commit is made for pushes AND for pull requests from the same repository, so a pull
+# request always carries the build of its own sources and a release tag created right after
+# a merge is complete. Pull requests from forks build for verification only: their code must
+# never get near a write-capable token, which is why the build runs in a read-only job and a
+# separate job — running no repository code — applies and commits its result.
 
 on:
   workflow_call:
     inputs:
       commit:
         description: >-
-          Commit the built Studio assets back to the branch. Only enabled for
-          pushes to a development branch — pull requests build for verification
-          only, so their diffs stay limited to the actual source changes.
+          Commit the packaged Studio builds back to the branch. Pull requests from forks and
+          manual runs are always verification-only regardless of this input; the caller
+          normally passes `github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository`.
         type: boolean
         default: false
       assets_path:
         description: >-
-          Directory holding the Studio npm project (package.json,
-          rsbuild.config.ts). Left empty, the detect job finds it: the bundles
-          put it under their PSR-4 root, which is `src` in most repos and
-          `src/Bundle` in others. Set this only for a layout it does not know.
+          Directory holding the Studio npm project (package.json, rsbuild config). Left
+          empty, the detect job finds it: the bundles put it under their PSR-4 root, which
+          is `src` in most repos and `src/Bundle` in others. The core passes `.`.
         type: string
         default: ''
       output_path:
         description: >-
-          Directory the build writes its <build-id> directories into. Left
-          empty, it is derived from the resolved assets path, which is the
-          correct sibling directory in either layout.
+          Directory the build writes its <build-id> directory into. Left empty, it is
+          derived from the resolved assets path (the sibling `Resources/public/studio`).
         type: string
         default: ''
+      archive_path:
+        description: >-
+          Directory the packaged build is written to as build-<build-id>.zip. Left empty,
+          it is derived from the resolved assets path (the sibling `Resources/build-dist`).
+        type: string
+        default: ''
+      stage_pathspec:
+        description: >-
+          Git pathspec of the committed build artifacts. Left empty, it is `<archive_path>/*`.
+          The core passes `src/CoreShop/Bundle/*/Resources/build-dist/*`.
+        type: string
+        default: ''
+      composer:
+        description: >-
+          Run `composer install` before the frontend build. The bundles need it (their
+          rsbuild config aliases @coreshop/* into vendor/); the core does not.
+        type: boolean
+        default: true
+      install_command:
+        description: >-
+          Command that installs the npm dependencies, executed in `assets_path`. The bundles
+          have no committed lock file, hence `npm install`; the core passes `npm ci`.
+        type: string
+        default: 'npm install --ignore-scripts --no-audit --no-fund'
+      build_command:
+        description: >-
+          Command that runs the production build, executed in `assets_path` with
+          CORESHOP_BUILD_ID set (bundles only, see `package`). rsbuild is invoked directly
+          rather than through the bundles' `npm run build` script: that script generates a
+          random build id, which would rewrite every asset path on every build.
+        type: string
+        default: 'npx rsbuild build'
+      package:
+        description: >-
+          Derive the build id and package `<output_path>/<build-id>` into
+          `<archive_path>/build-<build-id>.zip` after the build. The core packages its
+          bundles inside `npm run build` and passes false.
+        type: boolean
+        default: true
+      typecheck_blocking:
+        description: >-
+          Fail the build when `npm run check-types` fails. Off for the bundles: they inherit
+          TS2307 errors from the aliased @coreshop/* sources under vendor/, which resolve
+          their imports against the monorepo's node_modules and cannot be fixed from a
+          bundle repo. The production build is their gate; the core passes true.
+        type: boolean
+        default: false
       node_version:
         type: string
         default: '22'
@@ -47,32 +107,34 @@ on:
         default: '8.3'
       php_extensions:
         description: >-
-          Extensions for setup-php. imap is included because the inbound email
-          rules bundle requires php-imap/php-imap, whose platform requirement
-          would otherwise abort `composer install`.
+          Extensions for setup-php. imap is included because the inbound email rules bundle
+          requires php-imap/php-imap, whose platform requirement would otherwise abort
+          `composer install`.
         type: string
         default: 'intl, gd, simpleXML, dom, exif, fileinfo, iconv, imap, mbstring, mysqli, pdo_mysql, zip, zlib'
       composer_command:
         type: string
         default: 'composer install --no-progress --prefer-dist --no-interaction'
-      build_command:
-        description: >-
-          Command that runs the production build, executed in `assets_path` with
-          CORESHOP_BUILD_ID set. rsbuild is invoked directly rather than through
-          the bundles' `npm run build` script: that script generates a random
-          build id, which would rewrite every asset path on every build.
-        type: string
-        default: 'npx rsbuild build'
       runs_on:
         type: string
         default: '["ubuntu-latest"]'
 
-# No workflow-level `permissions`: it would override what the calling job
-# grants, leaving the build job read-only even on the push build. Jobs declare
-# what they need instead.
+# No workflow-level `permissions`: it would override what the calling job grants. The jobs
+# that run repository code declare `contents: read` themselves; only the commit job, which
+# runs no repository code, gets the write scope.
+
+env:
+  # The branch the archives are committed to.
+  BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+  # The ref the build runs on. For a pull request that is the head branch itself rather than
+  # the merge ref, so the archives are built from — and committed to — the same commit. A
+  # fork can be private and unreadable with this repository's token, so its head is fetched
+  # through the mirror ref GitHub keeps for every pull request.
+  CHECKOUT_REF: ${{ github.event.pull_request && github.event.pull_request.head.repo.full_name != github.repository && format('refs/pull/{0}/head', github.event.pull_request.number) || github.head_ref || github.ref_name }}
+
 jobs:
-  # Lets the caller be synced to every bundle repo, including those that have no
-  # Studio plugin (yet). Repos without an assets directory skip the build
+  # Resolves the layout. Lets the caller be synced to every bundle repo, including those
+  # that have no Studio plugin (yet): repos without an assets directory skip the build
   # instead of failing.
   detect:
     runs-on: ${{ fromJSON(inputs.runs_on) }}
@@ -84,26 +146,28 @@ jobs:
       has_assets: ${{ steps.detect.outputs.has_assets }}
       assets_path: ${{ steps.detect.outputs.assets_path }}
       output_path: ${{ steps.detect.outputs.output_path }}
+      archive_path: ${{ steps.detect.outputs.archive_path }}
+      stage_pathspec: ${{ steps.detect.outputs.stage_pathspec }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
+          ref: ${{ env.CHECKOUT_REF }}
           persist-credentials: false
 
-      # The paths are resolved here rather than defaulted in the inputs because
-      # the bundles do not share one layout: the Studio plugin sits under the
-      # PSR-4 root, which is `src` in most repos and `src/Bundle` in others.
-      # A default can only be right for one of them, and the caller workflow is
-      # a centrally synced file — so every repo on the other layout had to carry
-      # a local override that the next sync run would silently overwrite,
-      # leaving the build to "find" no assets and skip. Detecting the layout
-      # keeps one template correct for every repo.
+      # The paths are resolved here rather than defaulted in the inputs because the bundles
+      # do not share one layout: the Studio plugin sits under the PSR-4 root, which is `src`
+      # in most repos and `src/Bundle` in others. The caller workflow is a centrally synced
+      # file, so a per-repo override would be overwritten by the next sync run; detecting
+      # the layout keeps one template correct for every repo.
       - name: Look for Studio assets
         id: detect
         env:
           ASSETS_PATH: ${{ inputs.assets_path }}
           OUTPUT_PATH: ${{ inputs.output_path }}
+          ARCHIVE_PATH: ${{ inputs.archive_path }}
+          STAGE_PATHSPEC: ${{ inputs.stage_pathspec }}
         run: |
           if [ -n "$ASSETS_PATH" ]; then
             CANDIDATES="$ASSETS_PATH"
@@ -125,85 +189,70 @@ jobs:
             exit 0
           fi
 
-          # The built assets are the sibling of the sources: <root>/Resources/
-          # assets/pimcore-studio next to <root>/Resources/public/studio.
-          if [ -n "$OUTPUT_PATH" ]; then
-            RESOLVED_OUTPUT="$OUTPUT_PATH"
-          else
-            RESOLVED_OUTPUT="${FOUND%/assets/pimcore-studio}/public/studio"
-          fi
+          # The build output and the archive are siblings of the sources:
+          # <root>/Resources/assets/pimcore-studio next to <root>/Resources/public/studio
+          # and <root>/Resources/build-dist.
+          ROOT="${FOUND%/assets/pimcore-studio}"
+          RESOLVED_OUTPUT="${OUTPUT_PATH:-${ROOT}/public/studio}"
+          RESOLVED_ARCHIVE="${ARCHIVE_PATH:-${ROOT}/build-dist}"
+          RESOLVED_PATHSPEC="${STAGE_PATHSPEC:-${RESOLVED_ARCHIVE}/*}"
 
           {
             echo 'has_assets=true'
             echo "assets_path=${FOUND}"
             echo "output_path=${RESOLVED_OUTPUT}"
+            echo "archive_path=${RESOLVED_ARCHIVE}"
+            echo "stage_pathspec=${RESOLVED_PATHSPEC}"
           } >> "$GITHUB_OUTPUT"
 
-          echo "Studio assets: ${FOUND} → ${RESOLVED_OUTPUT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Studio assets: ${FOUND} → ${RESOLVED_ARCHIVE} (staged as \`${RESOLVED_PATHSPEC}\`)" >> "$GITHUB_STEP_SUMMARY"
 
-  # No job-level `permissions` block: the job inherits what the calling workflow
-  # grants, so the write scope needed for the commit only exists on the push
-  # build.
+  # Read-only: runs the repository code (composer scripts, npm hooks, the build) and captures
+  # the resulting archives as a patch. The write scope only exists in the commit job below.
   build:
     needs: detect
     if: ${{ needs.detect.outputs.has_assets == 'true' }}
     runs-on: ${{ fromJSON(inputs.runs_on) }}
 
+    permissions:
+      contents: read
+
+    outputs:
+      changed: ${{ steps.capture.outputs.changed }}
+      sha: ${{ steps.capture.outputs.sha }}
+
     steps:
-      # The bundles' development branches are not protected, so GITHUB_TOKEN can
-      # push the asset commit. Where a "CoreShop Studio Build" app is configured
-      # (as on coreshop/CoreShop, whose release branches carry a ruleset), its
-      # installation token is used instead so the commit is attributed to the bot
-      # and can bypass the ruleset.
-      #
-      # Secrets cannot be read in an `if:` condition, so whether the app is
-      # configured is determined in a step that can see them.
-      - name: Check whether the build app is configured
-        id: app-config
-        if: ${{ inputs.commit }}
-        env:
-          APP_ID: ${{ secrets.STUDIO_BUILD_APP_ID }}
-          PRIVATE_KEY: ${{ secrets.STUDIO_BUILD_APP_PRIVATE_KEY }}
-        run: |
-          if [ -n "$APP_ID" ] && [ -n "$PRIVATE_KEY" ]; then
-            echo 'configured=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'configured=false' >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Generate a token for the asset commit
-        id: app-token
-        if: ${{ steps.app-config.outputs.configured == 'true' }}
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.STUDIO_BUILD_APP_ID }}
-          private-key: ${{ secrets.STUDIO_BUILD_APP_PRIVATE_KEY }}
-
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          token: ${{ steps.app-token.outputs.token || github.token }}
+          ref: ${{ env.CHECKOUT_REF }}
+          # Runs repository code; nothing here needs authenticated git after the checkout.
+          persist-credentials: false
 
       - name: Install PHP
+        if: ${{ inputs.composer }}
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ inputs.php_version }}
           extensions: ${{ inputs.php_extensions }}
 
       - name: Get composer cache directory
+        if: ${{ inputs.composer }}
         id: composer-cache
         run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
 
       - name: Cache composer dependencies
+        if: ${{ inputs.composer }}
         uses: actions/cache@v4
         with:
           path: ${{ steps.composer-cache.outputs.dir }}
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
-      # The Studio sources import @coreshop/* from vendor/coreshop/core-shop, so
-      # the frontend build cannot run before the PHP dependencies are installed.
+      # The bundles' Studio sources import @coreshop/* from vendor/coreshop/core-shop, so
+      # their frontend build cannot run before the PHP dependencies are installed.
       - name: Install PHP dependencies
+        if: ${{ inputs.composer }}
         run: ${{ inputs.composer_command }}
 
       - name: Set up Node.js
@@ -211,8 +260,8 @@ jobs:
         with:
           node-version: ${{ inputs.node_version }}
 
-      # setup-node's built-in cache needs a committed lock file, which these
-      # bundles do not have, so the npm cache is handled here instead.
+      # setup-node's built-in cache needs a committed lock file, which the bundles do not
+      # have, so the npm cache is handled here for both layouts.
       - name: Cache npm downloads
         uses: actions/cache@v4
         with:
@@ -222,7 +271,7 @@ jobs:
 
       - name: Install frontend dependencies
         working-directory: ${{ needs.detect.outputs.assets_path }}
-        run: npm install --ignore-scripts --no-audit --no-fund
+        run: ${{ inputs.install_command }}
 
       - name: Run esbuild install script
         working-directory: ${{ needs.detect.outputs.assets_path }}
@@ -238,28 +287,21 @@ jobs:
             echo 'check_types=false' >> "$GITHUB_OUTPUT"
           fi
 
-      # Advisory only. The bundles' type check reports ~100 TS2307 errors that
-      # originate in the aliased @coreshop/* sources under vendor/, not in the
-      # bundle's own code: those sources resolve their imports against the
-      # CoreShop monorepo's node_modules, which does not exist in a bundle
-      # checkout. Nothing in a bundle repo can fix them, so a blocking step
-      # would keep every bundle permanently red. The production build below is
-      # the gate — it fails on anything that actually breaks the bundle, and
-      # type errors still show up as a warning annotation on the run.
-      - name: Run type checks (advisory, does not fail the build)
+      # Advisory for the bundles (see the `typecheck_blocking` input); type errors still show
+      # up as a warning annotation on the run.
+      - name: Run type checks
         if: ${{ steps.scripts.outputs.check_types == 'true' }}
-        continue-on-error: true
+        continue-on-error: ${{ !inputs.typecheck_blocking }}
         working-directory: ${{ needs.detect.outputs.assets_path }}
         run: npm run check-types
 
-      # The build id is the output directory name and the public asset prefix, so
-      # it has to change when the emitted assets change — and only then. A random
-      # id per build (what the bundles' local `npm run build` uses) would make
-      # every build a full delete/add of all assets in git.
-      #
-      # Inputs are the bundle's own Studio sources plus the CoreShop Studio
-      # sources from vendor/, which the rsbuild aliases inline into the output.
+      # The build id is the output directory name, the public asset prefix and the archive
+      # name, so it has to change when the emitted assets change — and only then. Inputs are
+      # the bundle's own Studio sources plus the CoreShop Studio sources from vendor/, which
+      # the rsbuild aliases inline into the output. The core derives its ids per bundle in
+      # studio-build.ts instead.
       - name: Derive the build id
+        if: ${{ inputs.package }}
         id: build-id
         env:
           ASSETS_PATH: ${{ needs.detect.outputs.assets_path }}
@@ -268,8 +310,10 @@ jobs:
             {
               find "$ASSETS_PATH" -type f \
                 -not -path '*/node_modules/*' -not -name 'package-lock.json' -print0
-              find vendor/coreshop -type f -path '*/Resources/assets/pimcore-studio/*' \
-                -not -path '*/node_modules/*' -not -name 'package-lock.json' -print0
+              if [ -d vendor/coreshop ]; then
+                find vendor/coreshop -type f -path '*/Resources/assets/pimcore-studio/*' \
+                  -not -path '*/node_modules/*' -not -name 'package-lock.json' -print0
+              fi
             } \
               | LC_ALL=C sort -z \
               | xargs -0 sha256sum \
@@ -285,22 +329,66 @@ jobs:
           CORESHOP_BUILD_ID: ${{ steps.build-id.outputs.build_id }}
         run: ${{ inputs.build_command }}
 
-      # `git add --all --force` also stages deletions of stale build directories:
-      # the rsbuild config removes the previous build id's directory before it
-      # writes the new one.
-      - name: Stage built assets
-        id: stage
+      # Packages <output_path>/<build-id> into <archive_path>/build-<build-id>.zip with
+      # Pimcore's `studio-package-build` (shipped by @pimcore/studio-ui-bundle since
+      # 2025.4.12 / 2026.2.x). It expects a `.build-id` file in the output directory, keeps an
+      # existing archive for that id untouched, removes any stray archive of another id and
+      # writes deterministic zip entries (sorted, fixed timestamps). A repo whose Studio
+      # project predates the bin gets the same behaviour from the fallback below.
+      - name: Package the build
+        if: ${{ inputs.package }}
         env:
+          ASSETS_PATH: ${{ needs.detect.outputs.assets_path }}
           OUTPUT_PATH: ${{ needs.detect.outputs.output_path }}
+          ARCHIVE_PATH: ${{ needs.detect.outputs.archive_path }}
+          BUILD_ID: ${{ steps.build-id.outputs.build_id }}
         run: |
-          git add --all --force -- "$OUTPUT_PATH"
+          set -euo pipefail
+
+          BUILD_DIR="${OUTPUT_PATH}/${BUILD_ID}"
+          if [ ! -d "$BUILD_DIR" ]; then
+            echo "::error::The build did not produce ${BUILD_DIR}; the rsbuild config has to write into <output_path>/\$CORESHOP_BUILD_ID."
+            exit 1
+          fi
+          printf '%s\n' "$BUILD_ID" > "${BUILD_DIR}/.build-id"
+
+          PACKAGE_BIN="${ASSETS_PATH}/node_modules/.bin/studio-package-build"
+          if [ -x "$PACKAGE_BIN" ]; then
+            "$PACKAGE_BIN" --build-dir "$OUTPUT_PATH" --out-dir "$ARCHIVE_PATH"
+            exit 0
+          fi
+
+          echo "::warning::studio-package-build not found in ${ASSETS_PATH}/node_modules — packaging with the built-in fallback. Add @pimcore/studio-ui-bundle >= 2025.4.12 to the Studio project."
+          mkdir -p "$ARCHIVE_PATH"
+          ARCHIVE="${ARCHIVE_PATH}/build-${BUILD_ID}.zip"
+          if [ -f "$ARCHIVE" ]; then
+            echo "${ARCHIVE} already up to date for this source; nothing to do."
+          else
+            # Fixed timestamps and a sorted file list keep the archive bytes stable for one id.
+            find "$BUILD_DIR" -exec touch -t 200101010000 {} +
+            ( cd "$OUTPUT_PATH" && find "$BUILD_ID" -type f | LC_ALL=C sort | TZ=UTC zip -X -q -D "$OLDPWD/$ARCHIVE" -@ )
+            echo "Wrote ${ARCHIVE}."
+          fi
+          # Only one archive is ever tracked: sweep the archives of other ids.
+          find "$ARCHIVE_PATH" -maxdepth 1 -name 'build-*.zip' -not -name "build-${BUILD_ID}.zip" -delete
+
+      # `git add --all` also stages the removal of the previous archive of a bundle whose id
+      # changed, so the patch is a faithful round-trip of the archive directories.
+      - name: Capture the packaged builds as a patch
+        id: capture
+        env:
+          STAGE_PATHSPEC: ${{ needs.detect.outputs.stage_pathspec }}
+        run: |
+          git add --all --force -- "$STAGE_PATHSPEC"
+          git diff --cached --binary > "${RUNNER_TEMP}/build-dist.patch"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           if git diff --cached --quiet; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
-            echo 'Studio assets are up to date.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Studio build archives are up to date.' >> "$GITHUB_STEP_SUMMARY"
           else
             echo 'changed=true' >> "$GITHUB_OUTPUT"
             {
-              echo '### Studio assets changed by this build'
+              echo '### Studio build archives changed by this build'
               echo
               echo '```'
               git diff --cached --stat
@@ -308,15 +396,91 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Commit built assets
-        if: ${{ inputs.commit && steps.stage.outputs.changed == 'true' }}
+      - name: Upload the patch
+        if: ${{ steps.capture.outputs.changed == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-dist-patch
+          path: ${{ runner.temp }}/build-dist.patch
+          retention-days: 1
+          if-no-files-found: error
+          # Artifact names are immutable per run; let a re-run of a failed job upload again.
+          overwrite: true
+
+  # Write-capable, but runs no repository code: it only applies the patch of the build job
+  # and commits it. Gated to pushes and to pull requests from this repository, so a fork's
+  # code never gets near the write-capable token.
+  commit:
+    needs: build
+    if: ${{ inputs.commit && needs.build.outputs.changed == 'true' && github.event_name != 'workflow_dispatch' && (!github.event.pull_request || github.event.pull_request.head.repo.full_name == github.repository) }}
+    runs-on: ${{ fromJSON(inputs.runs_on) }}
+
+    permissions:
+      contents: write
+
+    steps:
+      # The bundles' version branches are not protected, so GITHUB_TOKEN can push the commit.
+      # Where a "CoreShop Studio Build" app is configured (as on coreshop/CoreShop, whose
+      # version branches carry a ruleset that GitHub Actions itself cannot bypass), its
+      # installation token is used instead so the commit is attributed to the bot and can
+      # bypass the ruleset.
+      #
+      # Secrets cannot be read in an `if:` condition, so whether the app is configured is
+      # determined in a step that can see them.
+      - name: Check whether the build app is configured
+        id: app-config
+        env:
+          APP_ID: ${{ secrets.STUDIO_BUILD_APP_ID }}
+          PRIVATE_KEY: ${{ secrets.STUDIO_BUILD_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APP_ID" ] && [ -n "$PRIVATE_KEY" ]; then
+            echo 'configured=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'configured=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate a token for the commit
+        id: app-token
+        if: ${{ steps.app-config.outputs.configured == 'true' }}
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.STUDIO_BUILD_APP_ID }}
+          private-key: ${{ secrets.STUDIO_BUILD_APP_PRIVATE_KEY }}
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.BRANCH_NAME }}
+          repository: ${{ github.repository }}
+          token: ${{ steps.app-token.outputs.token || github.token }}
+
+      - name: Download the patch
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist-patch
+          path: ${{ runner.temp }}
+
+      - name: Commit the packaged builds
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
           GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+          BUILT_SHA: ${{ needs.build.outputs.sha }}
         run: |
-          # Attribute the commit to whichever identity actually pushes it. The
-          # numeric id in the noreply address is what links a commit to the bot
-          # account on GitHub.
+          # The patch was taken against the commit the build ran on. If the branch moved on in
+          # the meantime, the newer push runs its own build and supersedes these archives, so
+          # a patch that no longer applies is benign in that case — and only in that case.
+          if ! git apply --index "${RUNNER_TEMP}/build-dist.patch"; then
+            if [ "$(git rev-parse HEAD)" != "${BUILT_SHA}" ]; then
+              echo "::notice::${BRANCH_NAME} moved on during the build; the newer push rebuilds the archives."
+              echo 'Commit skipped: branch moved on during the build.' >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::error::The packaged Studio builds do not apply to ${BRANCH_NAME} although the branch did not move on."
+            exit 1
+          fi
+
+          # Attribute the commit to whichever identity actually pushes it. The numeric id in
+          # the noreply address is what links a commit to the bot account on GitHub.
           if [ -n "$APP_SLUG" ]; then
             BOT_ID="$(gh api "/users/${APP_SLUG}%5Bbot%5D" --jq .id 2>/dev/null || true)"
           fi
@@ -330,23 +494,22 @@ jobs:
 
           git commit -m 'Build Studio bundle'
 
-          if git push origin HEAD:"${GITHUB_REF_NAME}"; then
+          if git push origin HEAD:"${BRANCH_NAME}"; then
             exit 0
           fi
 
-          # A rejected push has two very different causes, and only one of them
-          # is benign: the branch moved on while we were building, in which case
-          # the newer push runs its own build and supersedes these assets.
-          # Anything else — a ruleset rejection, a missing write scope — means the
-          # assets never land, and that must not pass as a green job. HEAD~1 is
-          # the commit this build started from.
-          git fetch --quiet origin "${GITHUB_REF_NAME}"
-          if [ "$(git rev-parse "origin/${GITHUB_REF_NAME}")" != "$(git rev-parse HEAD~1)" ]; then
-            echo "::notice::${GITHUB_REF_NAME} moved on during the build; the newer push rebuilds the assets."
+          # A rejected push has two very different causes, and only one of them is benign:
+          # the branch moved on while we were building, in which case the newer push runs
+          # its own build and supersedes these archives. Anything else — a ruleset rejection,
+          # a missing write scope — means the archives never land, and that must not pass as
+          # a green job. HEAD~1 is the commit this job started from.
+          git fetch --quiet origin "${BRANCH_NAME}"
+          if [ "$(git rev-parse "origin/${BRANCH_NAME}")" != "$(git rev-parse HEAD~1)" ]; then
+            echo "::notice::${BRANCH_NAME} moved on during the build; the newer push rebuilds the archives."
             echo 'Push skipped: branch moved on during the build.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
 
-          echo "::error::Could not push the built Studio assets to ${GITHUB_REF_NAME}. The branch did not move on, so the push was refused — check that the calling job grants `contents: write`, or configure the STUDIO_BUILD_APP_ID and STUDIO_BUILD_APP_PRIVATE_KEY secrets if the branch is protected by a ruleset."
-          echo 'Push failed: built assets were not committed.' >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::Could not push the packaged Studio builds to ${BRANCH_NAME}. The branch did not move on, so the push was refused — check that the calling job grants \`contents: write\`, or configure the STUDIO_BUILD_APP_ID and STUDIO_BUILD_APP_PRIVATE_KEY secrets if the branch is protected by a ruleset."
+          echo 'Push failed: packaged builds were not committed.' >> "$GITHUB_STEP_SUMMARY"
           exit 1

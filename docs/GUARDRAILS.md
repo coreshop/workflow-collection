@@ -132,59 +132,14 @@ rename (main → `1.x`/`2.x` on 2026-08-12) — the first sync replaces them.
 
 ## Studio frontend build
 
-`.github/workflows/studio-build.yml` builds a bundle's Pimcore Studio plugin;
-`templates/studio-build.yml` is the caller synced into the bundle repos. It
-mirrors coreshop/CoreShop's `shared-frontend-build.yaml`, so the bundles follow
-the same convention: **built assets are produced by CI, not committed by hand.**
-
-- **Pull request** → `verify` job: `check-types` (if the bundle defines the
-  script) plus the production build, nothing committed. PR diffs stay
-  source-only.
-  The type check is **advisory** (`continue-on-error`): the bundles inherit
-  ~100 TS2307 errors from the aliased `@coreshop/*` sources in `vendor/`,
-  which resolve their imports against the CoreShop monorepo's
-  `node_modules` and therefore cannot be fixed from a bundle repo. The
-  production build is the gate; type errors surface as a warning annotation.
-- **Push to a version branch** (`'*.x'`) → `build` job: builds and commits the
-  assets under `src/Resources/public/studio/<build-id>/` as
-  `github-actions[bot]`, message `Build Studio bundle`. `paths-ignore` on that
-  directory keeps the commit from triggering another build.
-
-Bundle specifics that differ from the core monorepo:
-
-- The npm project sits in `src/Resources/assets/pimcore-studio` and its rsbuild
-  config aliases `@coreshop/*` into `vendor/coreshop/core-shop`, so the workflow
-  runs `composer install` (`imap` extension included for
-  inbound-email-rules) **before** the frontend build. One PHP version is
-  enough, since only the vendor sources are needed; the caller passes it (see
-  "PHP versions" below).
-- The bundles gitignore their npm lock file (it holds `file:` paths into
-  `vendor/`), so dependencies are installed with `npm install`, not `npm ci`.
-- The build id is derived in the workflow as a sha256 over the bundle's Studio
-  sources plus the CoreShop Studio sources from `vendor/` — the same
-  deterministic-id idea as `studio-build.ts` in the core. The bundles' local
-  `npm run build` script uses a random UUID, which would rewrite every asset
-  path on every build, so the workflow calls `npx rsbuild build` directly with
-  `CORESHOP_BUILD_ID` set.
-- **Token:** the bundles' version branches carry no ruleset, so the commit is
-  pushed with `GITHUB_TOKEN` and the caller's `contents: write`. If
-  `STUDIO_BUILD_APP_ID` / `STUDIO_BUILD_APP_PRIVATE_KEY` are configured (they
-  are repo secrets on coreshop/CoreShop, whose release branches *are*
-  protected), the workflow uses that app's installation token instead. A
-  refused push fails the job unless the branch simply moved on during the
-  build.
-- Repos with no Studio plugin skip the build via the `detect` job, so a bundle
-  can be added to the sync group before its plugin lands.
-- **The `detect` job also resolves the paths.** The plugin sits under the
-  bundle's PSR-4 root, which is `src` in most repos and `src/Bundle` in others
-  (ticketing, headless), so no single default fits all of them. `detect` looks
-  in both, derives `output_path` from what it finds, and passes them to the
-  build job. `assets_path` / `output_path` remain as inputs for a layout it
-  does not know, but no bundle needs to set them — which is the point: the
-  caller is a synced file, so a local override would be overwritten by the
-  next sync run, and the build would then quietly find no assets and skip.
-  The caller's `paths-ignore` uses `'**/Resources/public/studio/**'` for the
-  same reason.
+`.github/workflows/studio-build.yml` builds the Pimcore Studio plugins of the
+core monorepo and of the bundle repos and commits the packaged builds
+(`Resources/build-dist/build-<id>.zip`, Pimcore's build archive model) back to
+the branch — for pushes to version and release branches and for pull requests
+from the same repository. `templates/studio-build.yml` is the caller synced into
+the bundle repos, `templates/studio-build-core.yml` the one for
+coreshop/CoreShop. Inputs, jobs, packaging and what a consuming repo needs on
+the PHP side are documented in [docs/STUDIO_BUILD.md](STUDIO_BUILD.md).
 
 ## Installing Pimcore 12 vs 2026 (`behat.yml`)
 
@@ -259,7 +214,7 @@ belongs in the caller, and **every** synced template sets what it needs:
 |---|---|
 | `static.yml` | `php_versions: '["8.4", "8.5"]'` |
 | `behat-domain.yml` | `php_versions: '["8.4", "8.5"]'`, `pimcore_versions: '["^2026.2"]'` |
-| `studio-build.yml` | `php_version: '8.4'` (both jobs) |
+| `studio-build.yml` | `php_version: '8.4'` |
 
 Those values match CoreShop 2026.2's `~8.4 || ~8.5` and coreshop/CoreShop's
 own 2026.x matrix.
