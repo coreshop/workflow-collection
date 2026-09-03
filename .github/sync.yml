@@ -30,6 +30,7 @@ group:
       coreshop/customer-cluster-bundle
       coreshop/deposit-bundle
       coreshop/document-route-bundle
+      coreshop/EnterpriseSubscriptionBundle
       coreshop/inbound-email-rules-bundle
       coreshop/index-geo-bundle
       coreshop/loyalty-bundle
@@ -77,6 +78,7 @@ group:
       coreshop/customer-cluster-bundle
       coreshop/deposit-bundle
       coreshop/document-route-bundle
+      coreshop/EnterpriseSubscriptionBundle
       coreshop/headless-bundle
       coreshop/inbound-email-rules-bundle
       coreshop/loyalty-bundle
