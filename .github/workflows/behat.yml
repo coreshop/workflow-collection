@@ -174,14 +174,31 @@ jobs:
         key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
         restore-keys: ${{ runner.os }}-composer-
 
+    # Private bundles depend on each other (e.g. coreshop/enterprise-subscription-bundle);
+    # those packages only exist in Private Packagist. With the org secret COMPOSER_AUTH
+    # (passed via `secrets: inherit`) the repository is registered, otherwise this is a no-op.
+    - name: Private Packagist
+      env:
+        COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+      run: |
+        if [ -z "$COMPOSER_AUTH" ]; then
+          echo "::notice::COMPOSER_AUTH is not set, Private Packagist is not configured"
+          exit 0
+        fi
+        composer config -g repositories.coreshop composer https://repo.packagist.com/cors/
+
     - if: matrix.dependencies == 'highest'
       name: Install dependencies highest
+      env:
+        COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
       run: |
         composer req pimcore/pimcore:${{ matrix.pimcore }} --no-interaction --no-scripts --no-update
         composer update --no-progress --prefer-dist --optimize-autoloader
 
     - if: matrix.dependencies == 'lowest'
       name: Install dependencies lowest
+      env:
+        COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
       run: |
         composer req pimcore/pimcore:${{ matrix.pimcore }} --no-interaction --no-scripts --no-update
         composer update --no-progress --prefer-dist --optimize-autoloader --prefer-lowest
