@@ -249,10 +249,27 @@ jobs:
           key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.json') }}
           restore-keys: ${{ runner.os }}-composer-
 
+      # The private bundles depend on each other (e.g. coreshop/enterprise-subscription-bundle),
+      # and those packages only exist in Private Packagist. The caller passes `secrets: inherit`,
+      # so the org secret COMPOSER_AUTH (http-basic for repo.packagist.com) is available here;
+      # without it the step is a no-op and public-only repos keep working.
+      - name: Private Packagist
+        if: ${{ inputs.composer }}
+        env:
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: |
+          if [ -z "$COMPOSER_AUTH" ]; then
+            echo "::notice::COMPOSER_AUTH is not set, Private Packagist is not configured"
+            exit 0
+          fi
+          composer config -g repositories.coreshop composer https://repo.packagist.com/cors/
+
       # The bundles' Studio sources import @coreshop/* from vendor/coreshop/core-shop, so
       # their frontend build cannot run before the PHP dependencies are installed.
       - name: Install PHP dependencies
         if: ${{ inputs.composer }}
+        env:
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
         run: ${{ inputs.composer_command }}
 
       - name: Set up Node.js
