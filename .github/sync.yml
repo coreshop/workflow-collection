@@ -18,7 +18,8 @@
 
 group:
   # ──────────────────────────────────────────────────────────────────────
-  # Group 1: private bundle repos — guardrail (enforce), project auto-add,
+  # Group 1: bundle repos (private enterprise bundles and the public, CCL-only
+  # Payum gateway bundles) — guardrail (enforce), project auto-add,
   # PR template, static tests, shared psalm config.
   # headless-bundle is NOT here: it extends psalm.xml with its own
   # issueHandlers, so it gets everything except psalm.xml in group 1b.
@@ -34,6 +35,9 @@ group:
       coreshop/inbound-email-rules-bundle
       coreshop/index-geo-bundle
       coreshop/loyalty-bundle
+      coreshop/payum-saferpay-bundle
+      coreshop/payum-stripe-bundle
+      coreshop/payum-unzer-bundle
       coreshop/quick-order-bundle
       coreshop/ticketing-bundle
       coreshop/voucher-credit-bundle
