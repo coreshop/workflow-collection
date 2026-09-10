@@ -78,14 +78,21 @@ group:
   # directory, so a bundle can be added here before its plugin lands.
   # ──────────────────────────────────────────────────────────────────────
   - repos: |
+      coreshop/b2b-company-bundle
       coreshop/batch-messenger-bundle
+      coreshop/credit-bundle
       coreshop/customer-cluster-bundle
       coreshop/deposit-bundle
       coreshop/document-route-bundle
       coreshop/enterprise-subscription-bundle
       coreshop/headless-bundle
       coreshop/inbound-email-rules-bundle
+      coreshop/index-geo-bundle
       coreshop/loyalty-bundle
+      coreshop/payum-saferpay-bundle
+      coreshop/payum-stripe-bundle
+      coreshop/payum-unzer-bundle
+      coreshop/quick-order-bundle
       coreshop/ticketing-bundle
       coreshop/voucher-credit-bundle
       coreshop/warehouse-bundle
