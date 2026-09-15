@@ -102,7 +102,9 @@ jobs:
           MYSQL_ROOT_PASSWORD: root
         ports:
           - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
+        # MySQL 8 needs up to a minute to initialise on a busy runner (OpenSearch starts alongside);
+        # 3 retries × 10 s marked the container unhealthy before the job began, see #39.
+        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=12 --health-start-period=20s
 
       # Needed by Pimcore 2026's Generic Data Index. Service containers cannot
       # be declared conditionally, so it also starts for ^12.* matrix entries,
