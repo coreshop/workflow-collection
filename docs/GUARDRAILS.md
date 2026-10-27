@@ -19,11 +19,11 @@ caller workflow, the logic stays central.
 | Rule | Checks | On violation |
 |---|---|---|
 | **R1** | Branch is named `issue/<number>` (case-insensitive, suffix allowed: `issue/123-dam-import`) | Violation |
-| **R2** | Issue `<number>` exists in **this** repo and is open. A PR number does not count as an issue. | Violation |
-| **R3** | Title autofix: if the PR title is just the branch name, it is replaced with `#<number> <issue title>`. Other titles are **never** touched. | Repair, no violation |
+| **R2** | Issue `<number>` exists in **this** repo and is open. A PR number does not count as an issue. A branch without an issue number (R1 failed) fails R2 as well. | Violation |
+| **R3** | Title autofix: if the PR title is just the branch name, it is replaced with `#<number> <issue title>`. Other titles are **never** touched. Without a valid issue (R1/R2 failed) the title cannot be replaced and a title that is only the branch name is reported. | Repair; violation if it cannot be applied |
 | **R4** | The PR description contains real prose (min. 50 characters). HTML comments, Markdown headings and empty checkboxes do not count. | Violation |
-| **R5** | All check runs and commit statuses on the head commit are green (Behat/static/CLA included), no merge conflicts. Pending checks trigger nothing — only a final failure or a conflict counts. | Violation |
-| **R6** | If the closing reference to the issue from R1 is missing, the guardrail appends `Closes #<number>` to the PR body. | Repair, no violation |
+| **R5** | All check runs and commit statuses on the head commit are green (Behat/static/CLA included), no merge conflicts. Pending checks trigger nothing — only a final failure or a conflict counts. The comment lists **every** failed check, each linked to its log; jobs of the same name are grouped on one line. | Violation |
+| **R6** | If the closing reference to the issue from R1 is missing, the guardrail appends `Closes #<number>` to the PR body. Without a valid issue (R1/R2 failed) nothing can be appended, and a body that closes no issue at all is reported. | Repair; violation if it cannot be applied |
 | **R7** | The PR targets a **version branch** (`^\d+\.x$`, e.g. `2.x`). | Violation |
 | **R8** | A **release PR** (head `release/<version>`) carries the milestone named after the released version (`release/5.1.0` → milestone `5.1.0`; a leading `v` is tolerated). Only evaluated for release PRs. | Violation |
 
@@ -79,7 +79,18 @@ a `release/…` branch is judged by the normal rules again.
 ## Mechanics (as in the CORS reference implementation)
 
 - **Sticky comment** with a fixed marker, updated instead of re-created; on
-  success it shrinks to a short confirmation.
+  success it shrinks to a short confirmation. It opens with an overview of
+  **every** rule (passed, failed, pending, fixed automatically, skipped) and
+  then gives each failed rule its own section with the action to take. Rules
+  are evaluated independently: a failed rule never hides another one, so one
+  round shows everything that has to be fixed. A second
+  sticky comment from two runs that started at the same time is deleted on
+  the next run.
+- **The CI workflows report everything in one round, too:** `static.yml`
+  runs every check (CS, YAML, Twig, container, PHPStan, Psalm) once the
+  dependencies are installed, even when an earlier one failed, and neither
+  `static.yml` nor `behat.yml` cancels the other matrix entries on a failure
+  (`fail-fast: false`).
 - **Draft PRs** are skipped (single exception: title autofix R3). The full
   check starts on "Ready for review".
 - **Bot PRs** (`dependabot[bot]`, `renovate[bot]`, `github-actions[bot]`,

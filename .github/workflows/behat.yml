@@ -90,6 +90,9 @@ jobs:
       PIMCORE_OPENSEARCH_DSN: "opensearch://127.0.0.1:9200?ssl=false&ssl_verify=false"
 
     strategy:
+      # A failure on one PHP/Pimcore combination must not cancel the others: their results are part
+      # of the same round of feedback.
+      fail-fast: false
       matrix:
         php: ${{ fromJSON(inputs.php_versions) }}
         pimcore: ${{ fromJSON(inputs.pimcore_versions) }}

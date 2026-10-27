@@ -29,6 +29,9 @@ jobs:
       PIMCORE_PRODUCT_KEY: "${{ secrets.PIMCORE_PRODUCT_KEY }}"
 
     strategy:
+      # A failure on one PHP version must not cancel the others: their results are part of the
+      # same round of feedback.
+      fail-fast: false
       matrix:
         php: ${{ fromJSON(inputs.php_versions) }}
 
@@ -84,27 +87,36 @@ jobs:
         composer config -g repositories.coreshop composer https://repo.packagist.com/cors/
 
     - name: composer install
+      id: install
       env:
         COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
       run: |
         composer install
 
+    # Every check below runs even when an earlier one failed, so one broken check does not hide
+    # the result of the others behind another round trip. They only need the dependencies.
     - name: Validate CS
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: vendor/bin/ecs check src
 
     - name: Validate YAML
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: bin/console lint:yaml config
 
     - name: Validate TWIG
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: bin/console lint:twig templates
 
     - name: Validate Container
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: bin/console lint:container
 
     - name: STAN
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: |
         vendor/bin/phpstan analyse src
 
     - name: PSALM
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
       run: |
         vendor/bin/psalm
